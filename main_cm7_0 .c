@@ -15,7 +15,7 @@ uint8 y1_boundary[MT9V03X_W], y2_boundary[MT9V03X_W], y3_boundary[MT9V03X_W];
 uint8 image_copy[MT9V03X_H][MT9V03X_W];
 
 // 线形灯点集存储
-#define MAX_CONN_POINTS 256
+#define MAX_CONN_POINTS 512  // 【修改】增加点集容量，防止条形灯点过多溢出
 static int16_t conn_x[MAX_CONN_POINTS];
 static int16_t conn_y[MAX_CONN_POINTS];
 static uint16_t conn_point_cnt = 0;
@@ -39,15 +39,15 @@ static LightType current_light_type = LIGHT_TYPE_CIRCLE;
 // 核心参数
 #define WINDOW_SIZE 3
 #define BRIGHT_THRESH 40
-#define ROI_SIZE 41
-#define AREA_THRESH 10
+#define ROI_SIZE 61      // 【修改】增大ROI区域，适应更长的条形灯
+#define AREA_THRESH 5    // 【修改】降低面积阈值，让小的条形灯也能被检测
 #define THRESH_RATIO 10
 
-// ====================== 【优化】判别参数（根据实际场景调整） ======================
-#define LENGTH_THRESH        10      // 连通域长边长度阈值（≥10 优先判定条形）
-#define BRIGHT_SUM_THRESH    300     // 连通域总亮度阈值
-#define CIRCLE_ASPECT_RATIO  1.5f    // 长宽比 < 1.5 → 圆形
-#define LINE_ASPECT_RATIO    1.8f    // 长宽比 ≥ 1.8 → 条形
+// ====================== 【大幅修改】条形灯识别参数（更宽松） ======================
+#define LENGTH_THRESH        6       // 连通域长边长度阈值（≥6 优先判定条形）
+#define BRIGHT_SUM_THRESH    100     // 连通域总亮度阈值（大幅降低）
+#define CIRCLE_ASPECT_RATIO  1.4f    // 长宽比 < 1.4 → 圆形
+#define LINE_ASPECT_RATIO    1.5f    // 长宽比 ≥ 1.5 → 条形（降低阈值）
 // ===================================================================================
 
 #define LOST_FRAME_THRESH 3
@@ -117,6 +117,19 @@ void SetCarSpeed(int16_t vx, int16_t vy, int16_t vw)
     uart_write_byte(UART_0, 0xAB);
     uart_write_buffer(UART_0, RxPacket, 6);
     uart_write_byte(UART_0, 0xBA);
+}
+
+// 【新增】图像上下翻转函数
+void flip_image_vertical(void)
+{
+    uint8 temp_row[MT9V03X_W];
+    for (int y = 0; y < MT9V03X_H / 2; y++)
+    {
+        // 交换第 y 行和第 (MT9V03X_H - 1 - y) 行
+        memcpy(temp_row, image_copy[y], MT9V03X_W);
+        memcpy(image_copy[y], image_copy[MT9V03X_H - 1 - y], MT9V03X_W);
+        memcpy(image_copy[MT9V03X_H - 1 - y], temp_row, MT9V03X_W);
+    }
 }
 
 // 连通域分析：返回长度、总亮度、长宽比
@@ -384,8 +397,6 @@ void TrackBeacon()
         break;
     }
 
-    // 【注释】强制状态机，可根据需要取消注释
-    // current_state = BEACON_STATE_TRACKING;
     switch (current_state)
     {
     case BEACON_STATE_LOST:
@@ -405,7 +416,7 @@ void TrackBeacon()
         break;
 
     case BEACON_STATE_TRACKING:
-        if (abs(direct_dx) > 2)
+        if (current_light_type == LIGHT_TYPE_LINE && abs(direct_dx) > 2)
         {
             vx = 0;
             vy = 0;
@@ -504,17 +515,23 @@ void find_bright_center(void)
         find_max_connected(roi_x0, roi_y0, roi_x1, roi_y1, roi_thresh, &temp_x, &temp_y, &aspect_ratio, &max_length, &total_bright);
         UpdateBeaconPos(temp_x, temp_y);
 
-        // ====================== 【优化】判别逻辑 ======================
-        uint8_t final_type = current_light_type; // 默认保持上一次状态，避免抖动
-
-        // 优先判断长宽比和长度、亮度
-        if (aspect_ratio >= LINE_ASPECT_RATIO && max_length >= LENGTH_THRESH && total_bright > BRIGHT_SUM_THRESH)
+        // ====================== 【优化】更宽松的判别逻辑 ======================
+        uint8_t final_type = LIGHT_TYPE_CIRCLE;
+        
+        // 只要满足“长宽比够” OR “长度够且亮度够”，就判定为条形灯
+        if (aspect_ratio >= LINE_ASPECT_RATIO || 
+            (max_length >= LENGTH_THRESH && total_bright > BRIGHT_SUM_THRESH))
         {
             final_type = LIGHT_TYPE_LINE;
         }
         else if (aspect_ratio < CIRCLE_ASPECT_RATIO)
         {
             final_type = LIGHT_TYPE_CIRCLE;
+        }
+        else
+        {
+            // 模糊区域：保持上一次的状态，防止抖动
+            final_type = current_light_type;
         }
 
         // ====================== 分类型标注 ======================
@@ -662,10 +679,18 @@ int main(void)
         {
             mt9v03x_finish_flag = 0;
             memcpy(image_copy[0], mt9v03x_image[0], MT9V03X_IMAGE_SIZE);
+            
+            // 【新增】解决画面上下颠倒
+            flip_image_vertical();
+            
             find_bright_center();
             TrackBeacon();
             seekfree_assistant_camera_send();
         }
         system_delay_ms(1);
     }
-}
+}//如果条形灯仍未识别，可尝试：
+
+//继续降低 LINE_ASPECT_RATIO（如改为 1.3）。
+//继续降低 LENGTH_THRESH（如改为 4）。
+//降低 roi_thresh 的计算系数（如 THRESH_RATIO 改为 8）。
