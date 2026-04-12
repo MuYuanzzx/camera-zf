@@ -43,14 +43,12 @@ static LightType current_light_type = LIGHT_TYPE_CIRCLE;
 #define AREA_THRESH 10
 #define THRESH_RATIO 10
 
-// ====================== 【修改】双层判别参数 ======================
-// 1. 粗略区分：亮度 + 长度阈值
-#define LENGTH_THRESH        15      // 连通域长边长度：<15=圆形候选，≥15=条形候选
-#define BRIGHT_SUM_THRESH    500     // 连通域总亮度阈值
-// 2. 精准区分：长宽比阈值
-#define CIRCLE_ASPECT_RATIO  1.6f    // 长宽比 < 1.6 → 最终判定圆形
-#define LINE_ASPECT_RATIO    2.0f    // 长宽比 ≥ 2.0 → 最终判定条形
-// =================================================================
+// ====================== 【优化】判别参数（根据实际场景调整） ======================
+#define LENGTH_THRESH        10      // 连通域长边长度阈值（≥10 优先判定条形）
+#define BRIGHT_SUM_THRESH    300     // 连通域总亮度阈值
+#define CIRCLE_ASPECT_RATIO  1.5f    // 长宽比 < 1.5 → 圆形
+#define LINE_ASPECT_RATIO    1.8f    // 长宽比 ≥ 1.8 → 条形
+// ===================================================================================
 
 #define LOST_FRAME_THRESH 3
 #define FILTER_LEN 5
@@ -121,7 +119,7 @@ void SetCarSpeed(int16_t vx, int16_t vy, int16_t vw)
     uart_write_byte(UART_0, 0xBA);
 }
 
-// ====================== 【修改】连通域分析：返回长度、总亮度、长宽比 ======================
+// 连通域分析：返回长度、总亮度、长宽比
 void find_max_connected(int16 roi_x0, int16 roi_y0, int16 roi_x1, int16 roi_y1, uint8 thresh,
                         int16 *final_x, int16 *final_y, float *aspect_ratio, uint16_t *max_length, uint32_t *total_bright)
 {
@@ -241,7 +239,7 @@ void find_max_connected(int16 roi_x0, int16 roi_y0, int16 roi_x1, int16 roi_y1, 
     }
 }
 
-// 找线形灯端点（不变）
+// 找线形灯端点
 void find_line_endpoints(Point *top_point, Point *bottom_point)
 {
     if (conn_point_cnt < 2)
@@ -386,7 +384,8 @@ void TrackBeacon()
         break;
     }
 
-    current_state = BEACON_STATE_TRACKING;
+    // 【注释】强制状态机，可根据需要取消注释
+    // current_state = BEACON_STATE_TRACKING;
     switch (current_state)
     {
     case BEACON_STATE_LOST:
@@ -438,7 +437,7 @@ void TrackBeacon()
     SetCarSpeed(vx, vy, vw);
 }
 
-// ====================== 【核心修改】双层判别 + 分颜色显示 ======================
+// ====================== 【核心修改】灯光判别与颜色标注 ======================
 void find_bright_center(void)
 {
     int16 half_win = WINDOW_SIZE / 2;
@@ -505,22 +504,26 @@ void find_bright_center(void)
         find_max_connected(roi_x0, roi_y0, roi_x1, roi_y1, roi_thresh, &temp_x, &temp_y, &aspect_ratio, &max_length, &total_bright);
         UpdateBeaconPos(temp_x, temp_y);
 
-        // ====================== 双层判别逻辑 ======================
-        // 第一步：亮度+长度 粗略区分
-        uint8_t rough_type = LIGHT_TYPE_CIRCLE;
-        if(total_bright > BRIGHT_SUM_THRESH && max_length >= LENGTH_THRESH)
+        // ====================== 【优化】判别逻辑 ======================
+        uint8_t final_type = current_light_type; // 默认保持上一次状态，避免抖动
+
+        // 优先判断长宽比和长度、亮度
+        if (aspect_ratio >= LINE_ASPECT_RATIO && max_length >= LENGTH_THRESH && total_bright > BRIGHT_SUM_THRESH)
         {
-            rough_type = LIGHT_TYPE_LINE;
+            final_type = LIGHT_TYPE_LINE;
+        }
+        else if (aspect_ratio < CIRCLE_ASPECT_RATIO)
+        {
+            final_type = LIGHT_TYPE_CIRCLE;
         }
 
-        // 第二步：长宽比 精准确认
-        if(rough_type == LIGHT_TYPE_CIRCLE && aspect_ratio < CIRCLE_ASPECT_RATIO)
+        // ====================== 分类型标注 ======================
+        if (final_type == LIGHT_TYPE_CIRCLE)
         {
-            // ? 最终判定：圆形信标灯 → 红色点标中心
+            // ? 圆形信标灯：红色标注中心（xy_x2_boundary, xy_y2_boundary）
             current_light_type = LIGHT_TYPE_CIRCLE;
             direct_dx = 0;
 
-            // 红色标记中心
             int16 cnt = 0;
             for (int8 dy = -1; dy <= 1 && cnt < BOUNDARY_NUM; dy++)
                 for (int8 dx = -1; dx <= 1 && cnt < BOUNDARY_NUM; dx++)
@@ -537,13 +540,12 @@ void find_bright_center(void)
         }
         else
         {
-            // ? 最终判定：条形灯 → 黄色点标中心+端点
+            // ? 条形灯：黄色标注中心+端点（xy_x3_boundary, xy_y3_boundary）
             current_light_type = LIGHT_TYPE_LINE;
             Point top_p, bottom_p;
             find_line_endpoints(&top_p, &bottom_p);
             direct_dx = top_p.x - bottom_p.x;
 
-            // 黄色标记：上端点 + 下端点 + 中心
             int16 cnt = 0;
             // 上端点
             for (int8 dy = -1; dy <= 1 && cnt < BOUNDARY_NUM; dy++)
@@ -552,7 +554,11 @@ void find_bright_center(void)
                     int16 x = top_p.x + dx;
                     int16 y = top_p.y + dy;
                     if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
-                    {xy_x3_boundary[cnt]=x; xy_y3_boundary[cnt]=y; cnt++;}
+                    {
+                        xy_x3_boundary[cnt] = x;
+                        xy_y3_boundary[cnt] = y;
+                        cnt++;
+                    }
                 }
             // 下端点
             for (int8 dy = -1; dy <= 1 && cnt < BOUNDARY_NUM; dy++)
@@ -561,7 +567,11 @@ void find_bright_center(void)
                     int16 x = bottom_p.x + dx;
                     int16 y = bottom_p.y + dy;
                     if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
-                    {xy_x3_boundary[cnt]=x; xy_y3_boundary[cnt]=y; cnt++;}
+                    {
+                        xy_x3_boundary[cnt] = x;
+                        xy_y3_boundary[cnt] = y;
+                        cnt++;
+                    }
                 }
             // 中心
             for (int8 dy = -1; dy <= 1 && cnt < BOUNDARY_NUM; dy++)
@@ -570,7 +580,11 @@ void find_bright_center(void)
                     int16 x = bright_center_x + dx;
                     int16 y = bright_center_y + dy;
                     if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
-                    {xy_x3_boundary[cnt]=x; xy_y3_boundary[cnt]=y; cnt++;}
+                    {
+                        xy_x3_boundary[cnt] = x;
+                        xy_y3_boundary[cnt] = y;
+                        cnt++;
+                    }
                 }
         }
     }
@@ -596,7 +610,7 @@ void find_bright_center(void)
     }
 }
 
-// 方向识别函数（不变）
+// 方向识别函数
 int8_t orient_detect(int16_t orimid_x, int16_t orimid_y)
 {
     output_angle = 0;
