@@ -15,7 +15,7 @@ uint8 y1_boundary[MT9V03X_W], y2_boundary[MT9V03X_W], y3_boundary[MT9V03X_W];
 uint8 image_copy[MT9V03X_H][MT9V03X_W];
 
 // 线形灯点集存储
-#define MAX_CONN_POINTS 512  // 【修改】增加点集容量，防止条形灯点过多溢出
+#define MAX_CONN_POINTS 512 // 【修改】增加点集容量，防止条形灯点过多溢出
 static int16_t conn_x[MAX_CONN_POINTS];
 static int16_t conn_y[MAX_CONN_POINTS];
 static uint16_t conn_point_cnt = 0;
@@ -27,9 +27,10 @@ typedef struct
 } Point;
 
 // 灯光类型枚举
-typedef enum {
-    LIGHT_TYPE_CIRCLE,   // 圆形信标灯
-    LIGHT_TYPE_LINE      // 长条形识别灯
+typedef enum
+{
+    LIGHT_TYPE_CIRCLE, // 圆形信标灯
+    LIGHT_TYPE_LINE    // 长条形识别灯
 } LightType;
 
 static LightType current_light_type = LIGHT_TYPE_CIRCLE;
@@ -39,15 +40,15 @@ static LightType current_light_type = LIGHT_TYPE_CIRCLE;
 // 核心参数
 #define WINDOW_SIZE 3
 #define BRIGHT_THRESH 40
-#define ROI_SIZE 61      // 【修改】增大ROI区域，适应更长的条形灯
-#define AREA_THRESH 5    // 【修改】降低面积阈值，让小的条形灯也能被检测
+#define ROI_SIZE 61   // 【修改】增大ROI区域，适应更长的条形灯
+#define AREA_THRESH 5 // 【修改】降低面积阈值，让小的条形灯也能被检测
 #define THRESH_RATIO 10
 
 // ====================== 【大幅修改】条形灯识别参数（更宽松） ======================
-#define LENGTH_THRESH        6       // 连通域长边长度阈值（≥6 优先判定条形）
-#define BRIGHT_SUM_THRESH    100     // 连通域总亮度阈值（大幅降低）
-#define CIRCLE_ASPECT_RATIO  1.4f    // 长宽比 < 1.4 → 圆形
-#define LINE_ASPECT_RATIO    1.5f    // 长宽比 ≥ 1.5 → 条形（降低阈值）
+#define LENGTH_THRESH 6          // 连通域长边长度阈值（≥6 优先判定条形）
+#define BRIGHT_SUM_THRESH 100    // 连通域总亮度阈值（大幅降低）
+#define CIRCLE_ASPECT_RATIO 1.4f // 长宽比 < 1.4 → 圆形
+#define LINE_ASPECT_RATIO 1.5f   // 长宽比 ≥ 1.5 → 条形（降低阈值）
 // ===================================================================================
 
 #define LOST_FRAME_THRESH 3
@@ -67,7 +68,7 @@ uint8_t lost_frame_cnt = 0;
 #define PY_DEAD 10
 #define VW_MAX 80
 #define VX_MAX 150
-#define VY_MAX 20
+#define VY_MAX 150
 #define SEARCH_VW 70
 
 int16 bright_center_x = MT9V03X_W / 2;
@@ -184,10 +185,14 @@ void find_max_connected(int16 roi_x0, int16 roi_y0, int16 roi_x1, int16 roi_y1, 
                     curr_sum_i += pix;
                     curr_bright += pix;
 
-                    if(cx < tmp_min_x) tmp_min_x = cx;
-                    if(cx > tmp_max_x) tmp_max_x = cx;
-                    if(cy < tmp_min_y) tmp_min_y = cy;
-                    if(cy > tmp_max_y) tmp_max_y = cy;
+                    if (cx < tmp_min_x)
+                        tmp_min_x = cx;
+                    if (cx > tmp_max_x)
+                        tmp_max_x = cx;
+                    if (cy < tmp_min_y)
+                        tmp_min_y = cy;
+                    if (cy > tmp_max_y)
+                        tmp_max_y = cy;
 
                     if (conn_point_cnt < MAX_CONN_POINTS)
                     {
@@ -242,7 +247,8 @@ void find_max_connected(int16 roi_x0, int16 roi_y0, int16 roi_x1, int16 roi_y1, 
         int16_t height = max_y - min_y + 1;
         *max_length = (width > height) ? width : height;
         *aspect_ratio = (float)width / height;
-        if(*aspect_ratio < 1.0f) *aspect_ratio = 1.0f / *aspect_ratio;
+        if (*aspect_ratio < 1.0f)
+            *aspect_ratio = 1.0f / *aspect_ratio;
     }
     else
     {
@@ -365,10 +371,14 @@ void CheckBeaconLost()
 
 void UpdateBeaconPos(int16_t x, int16_t y)
 {
-    if (x < 0) x = 0;
-    if (x >= MT9V03X_W) x = MT9V03X_W - 1;
-    if (y < 0) y = 0;
-    if (y >= MT9V03X_H) y = MT9V03X_H - 1;
+    if (x < 0)
+        x = 0;
+    if (x >= MT9V03X_W)
+        x = MT9V03X_W - 1;
+    if (y < 0)
+        y = 0;
+    if (y >= MT9V03X_H)
+        y = MT9V03X_H - 1;
 
     bright_center_x = x;
     bright_center_y = y;
@@ -396,7 +406,7 @@ void TrackBeacon()
             current_state = BEACON_STATE_LOST;
         break;
     }
-
+    currnet_state = BEACON_STATE_TRACKING; // 暂时默认进入跟踪状态，仅调试
     switch (current_state)
     {
     case BEACON_STATE_LOST:
@@ -415,12 +425,13 @@ void TrackBeacon()
         vy = 0;
         break;
 
-    case BEACON_STATE_TRACKING:
+    case BEACON_STATE_TRACKING: // 暂时默认进入跟踪状态，仅调试
         if (current_light_type == LIGHT_TYPE_LINE && abs(direct_dx) > 2)
         {
             vx = 0;
             vy = 0;
-            vw = (direct_dx > 0) ? -70 : 70;
+            vw = 0.4 * (float)abs(direct_dx) + 50;
+            vw = (direct_dx > 0) ? -vw : vw;
         }
         else
         {
@@ -485,7 +496,7 @@ void find_bright_center(void)
     }
 
     uint32 avg_bright = total_sum / (MT9V03X_W * MT9V03X_H);
-    uint32 bright_diff = (max_win_sum / (WINDOW_SIZE*WINDOW_SIZE)) - avg_bright;
+    uint32 bright_diff = (max_win_sum / (WINDOW_SIZE * WINDOW_SIZE)) - avg_bright;
 
     // 清空所有标记
     memset(xy_x1_boundary, 0, sizeof(xy_x1_boundary));
@@ -517,9 +528,9 @@ void find_bright_center(void)
 
         // ====================== 【优化】更宽松的判别逻辑 ======================
         uint8_t final_type = LIGHT_TYPE_CIRCLE;
-        
+
         // 只要满足“长宽比够” OR “长度够且亮度够”，就判定为条形灯
-        if (aspect_ratio >= LINE_ASPECT_RATIO || 
+        if (aspect_ratio >= LINE_ASPECT_RATIO ||
             (max_length >= LENGTH_THRESH && total_bright > BRIGHT_SUM_THRESH))
         {
             final_type = LIGHT_TYPE_LINE;
@@ -570,7 +581,7 @@ void find_bright_center(void)
                 {
                     int16 x = top_p.x + dx;
                     int16 y = top_p.y + dy;
-                    if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
+                    if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H)
                     {
                         xy_x3_boundary[cnt] = x;
                         xy_y3_boundary[cnt] = y;
@@ -583,7 +594,7 @@ void find_bright_center(void)
                 {
                     int16 x = bottom_p.x + dx;
                     int16 y = bottom_p.y + dy;
-                    if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
+                    if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H)
                     {
                         xy_x3_boundary[cnt] = x;
                         xy_y3_boundary[cnt] = y;
@@ -596,7 +607,7 @@ void find_bright_center(void)
                 {
                     int16 x = bright_center_x + dx;
                     int16 y = bright_center_y + dy;
-                    if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
+                    if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H)
                     {
                         xy_x3_boundary[cnt] = x;
                         xy_y3_boundary[cnt] = y;
@@ -636,19 +647,26 @@ int8_t orient_detect(int16_t orimid_x, int16_t orimid_y)
     int16_t dx = top_p.x - bottom_p.x;
     int16_t dy = top_p.y - bottom_p.y;
 
-    if (dx == 0) output_angle = 0;
-    else if (dy == 0) output_angle = dx > 0 ? 90 : -90;
+    if (dx == 0)
+        output_angle = 0;
+    else if (dy == 0)
+        output_angle = dx > 0 ? 90 : -90;
     else
     {
         int abs_dx = abs(dx);
         int abs_dy = abs(dy);
         float ratio = (float)abs_dx / abs_dy;
 
-        if (ratio < 0.4142f)         output_angle = (int)(ratio * 54.3f + 0.5f);
-        else if (ratio < 1.0f)       output_angle = (int)(22.5f + (ratio - 0.4142f) * 38.3f + 0.5f);
-        else if (ratio < 2.4142f)    output_angle = 90 - (int)(22.5f + (1.0f/ratio - 0.4142f)*38.3f +0.5f);
-        else if (ratio < 11.430f)    output_angle = 90 - (int)((1.0f/ratio)*54.3f +0.5f);
-        else                         output_angle = 90;
+        if (ratio < 0.4142f)
+            output_angle = (int)(ratio * 54.3f + 0.5f);
+        else if (ratio < 1.0f)
+            output_angle = (int)(22.5f + (ratio - 0.4142f) * 38.3f + 0.5f);
+        else if (ratio < 2.4142f)
+            output_angle = 90 - (int)(22.5f + (1.0f / ratio - 0.4142f) * 38.3f + 0.5f);
+        else if (ratio < 11.430f)
+            output_angle = 90 - (int)((1.0f / ratio) * 54.3f + 0.5f);
+        else
+            output_angle = 90;
 
         output_angle = dx > 0 ? output_angle : -output_angle;
     }
@@ -679,18 +697,18 @@ int main(void)
         {
             mt9v03x_finish_flag = 0;
             memcpy(image_copy[0], mt9v03x_image[0], MT9V03X_IMAGE_SIZE);
-            
+
             // 【新增】解决画面上下颠倒
             flip_image_vertical();
-            
+
             find_bright_center();
             TrackBeacon();
             seekfree_assistant_camera_send();
         }
         system_delay_ms(1);
     }
-}//如果条形灯仍未识别，可尝试：
+} // 如果条形灯仍未识别，可尝试：
 
-//继续降低 LINE_ASPECT_RATIO（如改为 1.3）。
-//继续降低 LENGTH_THRESH（如改为 4）。
-//降低 roi_thresh 的计算系数（如 THRESH_RATIO 改为 8）。
+// 继续降低 LINE_ASPECT_RATIO（如改为 1.3）。
+// 继续降低 LENGTH_THRESH（如改为 4）。
+// 降低 roi_thresh 的计算系数（如 THRESH_RATIO 改为 8）。
