@@ -438,12 +438,12 @@ void TrackBeacon()
             vw = 0;
             if (abs(PY) > PY_DEAD)
             {
-                vx = 1.2 * (float)abs(PY) + 35;
+                vx = 1.7 * (float)abs(PY) + 35;
                 vx = (PY > 0) ? -vx : vx;
             }
             if (abs(PX) > PY_DEAD)
             {
-                vy = 1.2 * (float)abs(PX) + 35;
+                vy = 1.7 * (float)abs(PX) + 35;
                 vy = (PX > 0) ? -vy : vy;
             }
         }
