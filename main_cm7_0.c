@@ -5,7 +5,7 @@
 #include "zf_common_headfile.h"
 #include <stdint.h>
 #include <string.h>
-#include <math.h>   // 修复：浮点运算必须加的头文件
+#include <math.h> // 修复：浮点运算必须加的头文件
 
 #define INCLUDE_BOUNDARY_TYPE 3
 #define BOUNDARY_NUM (MT9V03X_H * 2)
@@ -31,9 +31,10 @@ typedef struct
 } Point;
 
 // ===================== 修复1：新增缺失的枚举/全局变量（解决4个编译错误）=====================
-typedef enum {
-    LIGHT_TYPE_POINT,    // 点状亮斑
-    LIGHT_TYPE_LINE      // 线形灯
+typedef enum
+{
+    LIGHT_TYPE_POINT, // 点状亮斑
+    LIGHT_TYPE_LINE   // 线形灯
 } LightType;
 
 LightType current_light_type = LIGHT_TYPE_POINT; // 当前灯类型
@@ -95,7 +96,8 @@ int16_t SpeedPacket[3];
 void SpeedPacket_to_RxPacket(void)
 {
     int16_t speed_buf[3];
-    for (int i = 0; i < 3; i++) speed_buf[i] = SpeedPacket[i];
+    for (int i = 0; i < 3; i++)
+        speed_buf[i] = SpeedPacket[i];
     RxPacket[0] = (uint8_t)(speed_buf[0] & 0xFF);
     RxPacket[1] = (uint8_t)((speed_buf[0] >> 8) & 0xFF);
     RxPacket[2] = (uint8_t)(speed_buf[1] & 0xFF);
@@ -117,7 +119,7 @@ void SetCarSpeed(int16_t vx, int16_t vy, int16_t vw)
 
 // 修复：保留唯一的连通域分析函数（删除了重复定义）
 void find_max_connected(int16 roi_x0, int16 roi_y0, int16 roi_x1, int16 roi_y1, uint8 thresh,
-                       int16 *final_x, int16 *final_y)
+                        int16 *final_x, int16 *final_y)
 {
     uint8 visited[ROI_SIZE][ROI_SIZE] = {0};
     int16 stack_x[ROI_SIZE * ROI_SIZE] = {0};
@@ -212,10 +214,10 @@ void find_line_endpoints(Point *top_point, Point *bottom_point)
 {
     if (conn_point_cnt < 2)
     {
-        top_point->x = MT9V03X_W/2;
-        top_point->y = MT9V03X_H/2;
-        bottom_point->x = MT9V03X_W/2;
-        bottom_point->y = MT9V03X_H/2;
+        top_point->x = MT9V03X_W / 2;
+        top_point->y = MT9V03X_H / 2;
+        bottom_point->x = MT9V03X_W / 2;
+        bottom_point->y = MT9V03X_H / 2;
         conn_point_cnt = 0;
         return;
     }
@@ -247,10 +249,10 @@ void find_line_endpoints(Point *top_point, Point *bottom_point)
     }
     else
     {
-        float sqrt_term = sqrtf( (cov_xx - cov_yy)*(cov_xx - cov_yy) + 4*cov_xy*cov_xy );
+        float sqrt_term = sqrtf((cov_xx - cov_yy) * (cov_xx - cov_yy) + 4 * cov_xy * cov_xy);
         u = 2 * cov_xy;
         v = (cov_yy - cov_xx) + sqrt_term;
-        float len = sqrtf(u*u + v*v);
+        float len = sqrtf(u * u + v * v);
         u /= len;
         v /= len;
     }
@@ -320,10 +322,14 @@ void CheckBeaconLost()
 
 void UpdateBeaconPos(int16_t x, int16_t y)
 {
-    if (x < 0) x = 0;
-    if (x >= MT9V03X_W) x = MT9V03X_W - 1;
-    if (y < 0) y = 0;
-    if (y >= MT9V03X_H) y = MT9V03X_H - 1;
+    if (x < 0)
+        x = 0;
+    if (x >= MT9V03X_W)
+        x = MT9V03X_W - 1;
+    if (y < 0)
+        y = 0;
+    if (y >= MT9V03X_H)
+        y = MT9V03X_H - 1;
 
     bright_center_x = x;
     bright_center_y = y;
@@ -371,7 +377,7 @@ void TrackBeacon()
         break;
 
     case BEACON_STATE_TRACKING: // 暂时默认进入跟踪状态，仅调试
-        if (current_light_type == LIGHT_TYPE_LINE && abs(direct_dx) > 2)
+        if (current_light_type == LIGHT_TYPE_LINE && abs(direct_dx) > 6)
         {
             vx = 0;
             vy = 0;
@@ -411,11 +417,26 @@ void TrackBeacon()
 
 void Angle_Alignment()
 {
-   int16_t vx = 0, vy = 0, vw = 0;
-  if(output_angle>15&&output_angle<90)      { vw=35; vx=0; vy=0; }
-  else if(output_angle<14&&output_angle>0)  { vw=10; vx=0; vy=0; }
-  else if(output_angle>90||output_angle<0)  { vw=0; vx=0; vy=0; }
-  SetCarSpeed(vx,vy,vw);
+    int16_t vx = 0, vy = 0, vw = 0;
+    if (output_angle > 15 && output_angle < 90)
+    {
+        vw = 35;
+        vx = 0;
+        vy = 0;
+    }
+    else if (output_angle < 14 && output_angle > 0)
+    {
+        vw = 10;
+        vx = 0;
+        vy = 0;
+    }
+    else if (output_angle > 90 || output_angle < 0)
+    {
+        vw = 0;
+        vx = 0;
+        vy = 0;
+    }
+    SetCarSpeed(vx, vy, vw);
 }
 
 // 核心函数：亮斑检测 + 线形灯最远两点标记
@@ -497,16 +518,24 @@ void find_bright_center(void)
             {
                 int16 x = top_p.x + dx;
                 int16 y = top_p.y + dy;
-                if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
-                {xy_x3_boundary[cnt3]=x; xy_y3_boundary[cnt3]=y; cnt3++;}
+                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H)
+                {
+                    xy_x3_boundary[cnt3] = x;
+                    xy_y3_boundary[cnt3] = y;
+                    cnt3++;
+                }
             }
         for (int8 dy = -1; dy <= 1 && cnt3 < BOUNDARY_NUM; dy++)
             for (int8 dx = -1; dx <= 1 && cnt3 < BOUNDARY_NUM; dx++)
             {
                 int16 x = bottom_p.x + dx;
                 int16 y = bottom_p.y + dy;
-                if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
-                {xy_x3_boundary[cnt3]=x; xy_y3_boundary[cnt3]=y; cnt3++;}
+                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H)
+                {
+                    xy_x3_boundary[cnt3] = x;
+                    xy_y3_boundary[cnt3] = y;
+                    cnt3++;
+                }
             }
 
         // 中心3×3标记
@@ -516,8 +545,12 @@ void find_bright_center(void)
             {
                 int16 x = bright_center_x + dx;
                 int16 y = bright_center_y + dy;
-                if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
-                {xy_x2_boundary[cnt2]=x; xy_y2_boundary[cnt2]=y; cnt2++;}
+                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H)
+                {
+                    xy_x2_boundary[cnt2] = x;
+                    xy_y2_boundary[cnt2] = y;
+                    cnt2++;
+                }
             }
     }
     else
@@ -531,31 +564,35 @@ void find_bright_center(void)
             {
                 int16 x = bright_center_x + dx;
                 int16 y = bright_center_y + dy;
-                if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H)
-                {xy_x2_boundary[cnt]=x; xy_y2_boundary[cnt]=y; cnt++;}
+                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H)
+                {
+                    xy_x2_boundary[cnt] = x;
+                    xy_y2_boundary[cnt] = y;
+                    cnt++;
+                }
             }
     }
 }
 
 // 修复：方向识别函数（删除死循环+坐标错误）
-//识别方向函数（IAR编译无错版）
+// 识别方向函数（IAR编译无错版）
 int8_t orient_detect(int16_t orimid_x, int16_t orimid_y)
 {
     output_angle = 0;
-    
+
     // 直接使用已计算好的线形灯最远两点
     Point top_p, bottom_p;
     find_line_endpoints(&top_p, &bottom_p);
-    
+
     // 角度计算（保留你原有逻辑）
     int16_t dx = top_p.x - bottom_p.x;
     int16_t dy = top_p.y - bottom_p.y;
 
-    if (dx == 0) 
+    if (dx == 0)
     {
         output_angle = 0;
     }
-    else if (dy == 0) 
+    else if (dy == 0)
     {
         output_angle = dx > 0 ? 90 : -90;
     }
@@ -565,30 +602,30 @@ int8_t orient_detect(int16_t orimid_x, int16_t orimid_y)
         int abs_dy = dy > 0 ? dy : -dy;
         float ratio = (float)abs_dx / abs_dy;
 
-        if (ratio < 0.4142f) 
+        if (ratio < 0.4142f)
         {
             output_angle = (int)(ratio * 54.3f + 0.5f);
-        } 
-        else if (ratio < 1.0f) 
+        }
+        else if (ratio < 1.0f)
         {
-            output_angle = (int)(22.5f + (ratio-0.4142f)*38.3f + 0.5f);
-        } 
-        else if (ratio < 2.4142f) 
+            output_angle = (int)(22.5f + (ratio - 0.4142f) * 38.3f + 0.5f);
+        }
+        else if (ratio < 2.4142f)
         {
-            output_angle = 90 - (int)(22.5f + (1.0f/ratio-0.4142f)*38.3f + 0.5f);
-        } 
-        else if (ratio < 11.430f) 
+            output_angle = 90 - (int)(22.5f + (1.0f / ratio - 0.4142f) * 38.3f + 0.5f);
+        }
+        else if (ratio < 11.430f)
         {
-            output_angle = 90 - (int)((1.0f/ratio)*54.3f + 0.5f);
-        } 
-        else 
+            output_angle = 90 - (int)((1.0f / ratio) * 54.3f + 0.5f);
+        }
+        else
         {
             output_angle = 90;
         }
 
         output_angle = dx > 0 ? output_angle : -output_angle;
     }
-    
+
     printf("angle:%d\r\n", output_angle);
     return output_angle;
 }
@@ -608,8 +645,8 @@ int main(void)
 
     seekfree_assistant_camera_information_config(SEEKFREE_ASSISTANT_MT9V03X, image_copy[0], MT9V03X_W, MT9V03X_H);
     seekfree_assistant_camera_boundary_config(XY_BOUNDARY, BOUNDARY_NUM,
-        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
+                                              xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
+                                              xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
 
     while (1)
     {
@@ -619,8 +656,8 @@ int main(void)
             memcpy(image_copy[0], mt9v03x_image[0], MT9V03X_IMAGE_SIZE);
             find_bright_center();
             // 调用方向检测
-            //orient_detect(bright_center_x, bright_center_y);
-            //seekfree_assistant_camera_send();
+            // orient_detect(bright_center_x, bright_center_y);
+            // seekfree_assistant_camera_send();
             TrackBeacon();
         }
         system_delay_ms(1);
