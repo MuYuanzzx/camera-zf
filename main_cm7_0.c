@@ -1,6 +1,7 @@
 #include "zf_common_headfile.h"
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 
 #define MT9V03X_W    188
 #define MT9V03X_H    120
@@ -12,28 +13,33 @@ uint8_t xy_y1_boundary[BOUNDARY_NUM], xy_y2_boundary[BOUNDARY_NUM], xy_y3_bounda
 
 uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 
-// ===================== 参数区（只保留必要的） =====================
-#define GRAY_THRESH      80      // 预处理：低于此值直接置黑
-#define BIN_THRESH       35      // 二值化阈值
-#define AREA_MIN         5       // 最小面积过滤噪点
-// ====================================================================
+// ===================== 参数区 =====================
+#define GRAY_THRESH      110     // 灰度低于110置0
+#define BIN_THRESH       35
+#define AREA_MIN         5
+// =================================================
 
 // 8邻域
 const int8_t dx[8] = {-1,0,1,-1,1,-1,0,1};
 const int8_t dy[8] = {-1,-1,-1,0,0,1,1,1};
 
-// 连通域信息
+// 连通域结构体
 typedef struct {
     int16_t cx, cy;
     int16_t minx, maxx, miny, maxy;
     uint32_t area;
-    float max_ratio;  // 最长边/最短边（相对长宽比，用于判断长条）
+    float max_ratio;
 } Blob;
 
 Blob blobs[8];
 uint8_t blob_cnt = 0;
 
-// 找所有连通域 + 计算相对长宽比
+// 方向灯全局变量
+float dir_led_angle = 0.0f;
+int16_t dir_top_x, dir_top_y;
+int16_t dir_bottom_x, dir_bottom_y;
+
+// 寻找所有连通域
 void find_all_blobs(void)
 {
     uint8_t vis[MT9V03X_H][MT9V03X_W] = {0};
@@ -81,17 +87,13 @@ void find_all_blobs(void)
 
                 if(area < AREA_MIN) continue;
 
-                // 计算宽度、高度
                 int16_t w = maxx - minx + 1;
                 int16_t h = maxy - miny + 1;
                 
-                // ===================== 修复报错：替换max/min为三目运算符 =====================
-                float max_val = (w > h) ? w : h;  // 替代 max(w,h)
-                float min_val = (w < h) ? w : h;  // 替代 min(w,h)
+                float max_val = (w > h) ? w : h;
+                float min_val = (w < h) ? w : h;
                 float max_ratio = max_val / min_val;
-                // ============================================================================
 
-                // 保存连通域信息
                 blobs[blob_cnt].cx = sum_x / area;
                 blobs[blob_cnt].cy = sum_y / area;
                 blobs[blob_cnt].minx = minx;
@@ -106,7 +108,25 @@ void find_all_blobs(void)
     }
 }
 
-// 主识别函数：长宽比最大的标黄（条形灯），其他标红（圆灯）
+// 【修正后】以图像竖直向下为0°，顺时针正、逆时针负，±90°
+float calculate_vertical_angle(int16_t top_x, int16_t top_y, int16_t bottom_x, int16_t bottom_y)
+{
+    int16_t dx = bottom_x - top_x;
+    int16_t dy = bottom_y - top_y;
+
+    if(dx == 0 && dy == 0)
+        return 0.0f;
+
+    float rad = atan2f(dx, dy);
+    float deg = rad * 180.0f / PI;
+
+    if(deg > 90.0f)  deg = 90.0f;
+    if(deg < -90.0f) deg = -90.0f;
+
+    return deg;
+}
+
+// 目标识别主函数
 void find_bright_center(void)
 {
     memset(xy_x2_boundary, 0, sizeof(xy_x2_boundary));
@@ -114,15 +134,16 @@ void find_bright_center(void)
     memset(xy_x3_boundary, 0, sizeof(xy_x3_boundary));
     memset(xy_y3_boundary, 0, sizeof(xy_y3_boundary));
 
-    int cnt_red = 0;   // 圆形灯：红色 → xy2
-    int cnt_yel = 0;   // 条形灯：黄色 → xy3
+    int cnt_red = 0;
+    int cnt_yel = 0;
 
-    // 1. 获取所有连通域
+    dir_led_angle = 0.0f;
+    dir_top_x = dir_top_y = dir_bottom_x = dir_bottom_y = -1;
+
     find_all_blobs();
 
     if(blob_cnt == 0)
     {
-        // 无目标：画中心红点
         for(int8_t dy=-1; dy<=1; dy++){
             for(int8_t dx=-1; dx<=1; dx++){
                 int16_t x = MT9V03X_W/2+dx, y = MT9V03X_H/2+dy;
@@ -136,7 +157,6 @@ void find_bright_center(void)
         return;
     }
 
-    // 2. 找出【长宽比最大】的连通域，作为条形灯
     int bar_idx = 0;
     float max_ratio = blobs[0].max_ratio;
     for(int i=1; i<blob_cnt; i++)
@@ -148,17 +168,42 @@ void find_bright_center(void)
         }
     }
 
-    // 3. 绘制条形灯（黄色，xy3）
     Blob bar_blob = blobs[bar_idx];
-    {
-        int16_t cx = bar_blob.cx;
-        int16_t cy = bar_blob.cy;
-        int16_t minx = bar_blob.minx;
-        int16_t maxx = bar_blob.maxx;
-        int16_t miny = bar_blob.miny;
-        int16_t maxy = bar_blob.maxy;
+    int16_t cx = bar_blob.cx;
+    int16_t cy = bar_blob.cy;
+    int16_t minx = bar_blob.minx, maxx = bar_blob.maxx;
+    int16_t miny = bar_blob.miny, maxy = bar_blob.maxy;
 
-        // 中心点
+    float top_max_dist_sq = -1.0f;
+    float bottom_max_dist_sq = -1.0f;
+
+    for(int y = miny; y <= maxy; y++){
+        for(int x = minx; x <= maxx; x++){
+            if(image_copy[y][x] > BIN_THRESH){
+                float dist_sq = (x - cx)*(x - cx) + (y - cy)*(y - cy);
+                if(y < cy){
+                    if(dist_sq > top_max_dist_sq){
+                        top_max_dist_sq = dist_sq;
+                        dir_top_x = x;
+                        dir_top_y = y;
+                    }
+                }
+                else if(y > cy){
+                    if(dist_sq > bottom_max_dist_sq){
+                        bottom_max_dist_sq = dist_sq;
+                        dir_bottom_x = x;
+                        dir_bottom_y = y;
+                    }
+                }
+            }
+        }
+    }
+
+    if(dir_top_x != -1 && dir_bottom_x != -1){
+        dir_led_angle = calculate_vertical_angle(dir_top_x, dir_top_y, dir_bottom_x, dir_bottom_y);
+    }
+
+    {
         for(int8_t dy=-1; dy<=1; dy++){
             for(int8_t dx=-1; dx<=1; dx++){
                 int16_t x = cx+dx, y = cy+dy;
@@ -169,10 +214,32 @@ void find_bright_center(void)
                 }
             }
         }
-        // 再画两个端点，让黄色标注更明显
+        if(dir_top_x != -1){
+            for(int8_t dy=-1; dy<=1; dy++){
+                for(int8_t dx=-1; dx<=1; dx++){
+                    int16_t x = dir_top_x+dx, y = dir_top_y+dy;
+                    if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H&&cnt_yel<BOUNDARY_NUM){
+                        xy_x3_boundary[cnt_yel] = x;
+                        xy_y3_boundary[cnt_yel] = y;
+                        cnt_yel++;
+                    }
+                }
+            }
+        }
+        if(dir_bottom_x != -1){
+            for(int8_t dy=-1; dy<=1; dy++){
+                for(int8_t dx=-1; dx<=1; dx++){
+                    int16_t x = dir_bottom_x+dx, y = dir_bottom_y+dy;
+                    if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H&&cnt_yel<BOUNDARY_NUM){
+                        xy_x3_boundary[cnt_yel] = x;
+                        xy_y3_boundary[cnt_yel] = y;
+                        cnt_yel++;
+                    }
+                }
+            }
+        }
         if(bar_blob.maxx - bar_blob.minx > bar_blob.maxy - bar_blob.miny)
         {
-            // 水平长条：画左右端点
             for(int8_t dy=-1; dy<=1; dy++){
                 for(int8_t dx=-1; dx<=1; dx++){
                     int16_t x = minx+dx, y = cy+dy;
@@ -196,7 +263,6 @@ void find_bright_center(void)
         }
         else
         {
-            // 竖直长条：画上下端点
             for(int8_t dy=-1; dy<=1; dy++){
                 for(int8_t dx=-1; dx<=1; dx++){
                     int16_t x = cx+dx, y = miny+dy;
@@ -220,19 +286,15 @@ void find_bright_center(void)
         }
     }
 
-    // 4. 剩下的所有连通域，一律当作圆灯标红
     for(int i=0; i<blob_cnt; i++)
     {
-        if(i == bar_idx) continue;  // 跳过已经标黄的条形灯
-
+        if(i == bar_idx) continue;
         Blob circle_blob = blobs[i];
-        int16_t cx = circle_blob.cx;
-        int16_t cy = circle_blob.cy;
-
-        // 画中心点（3x3方块）
+        int16_t cx_circle = circle_blob.cx;
+        int16_t cy_circle = circle_blob.cy;
         for(int8_t dy=-1; dy<=1; dy++){
             for(int8_t dx=-1; dx<=1; dx++){
-                int16_t x = cx+dx, y = cy+dy;
+                int16_t x = cx_circle+dx, y = cy_circle+dy;
                 if(x>=0&&x<MT9V03X_W&&y>=0&&y<MT9V03X_H&&cnt_red<BOUNDARY_NUM){
                     xy_x2_boundary[cnt_red] = x;
                     xy_y2_boundary[cnt_red] = y;
@@ -270,17 +332,15 @@ int main(void)
         {
             mt9v03x_finish_flag = 0;
 
-            // 灰度预处理：低于GRAY_THRESH的像素直接置0
+            // 灰度小于110全部置0
             for(int y=0; y<MT9V03X_H; y++){
                 for(int x=0; x<MT9V03X_W; x++){
                     uint8_t pix = mt9v03x_image[y][x];
-                    image_copy[y][x] = (pix <= GRAY_THRESH) ? 0 : pix;
+                    image_copy[y][x] = (pix < GRAY_THRESH) ? 0 : pix;
                 }
             }
 
             find_bright_center();
-            seekfree_assistant_camera_send();
+            printf("Led_Angle: %.2f°\r\n", dir_led_angle);
+           seekfree_assistant_camera_send();
         }
-        system_delay_ms(1);
-    }
-}
