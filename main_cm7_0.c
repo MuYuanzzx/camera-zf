@@ -556,7 +556,7 @@ int main(void)
             }
 
             find_bright_center();
-            TrackBeacon();
+            TrackBeacon(); // 目前只使用了识别出的小车灯的部分
         }
         system_delay_ms(1);
     }
