@@ -53,15 +53,19 @@ uint8_t offboard_start_flag = 0; // 外部控制模式启动标志位
 
 void SetFlyCar(float vx, float vy, float vyaw)
 {
-  maplepilot.roll_outer_control_output = vy;   // 右为正
-  maplepilot.pitch_outer_control_output = -1*(vx); // 后为正
+  maplepilot.roll_outer_control_output = vy;         // 右为正
+  maplepilot.pitch_outer_control_output = -1 * (vx); // 后为正
   maplepilot.yaw_ctrl_mode = ROTATE;
   maplepilot.yaw_outer_control_output = vyaw; // 顺指针为正
 }
-extern int16_t SpeedPacket[3];     // 速度数据缓存
+extern int16_t SpeedPacket[3]; // 速度数据缓存
+float SpeedT[3];
 void Auto_Flight_Ctrl(int16_t *mode)
 {
   static uint16_t openmv_work_mode = 0;
+  static uint16_t StateTime = 0;     // 状态保持时间
+  static uint8_t MyState = 0;        // 自定义状态机状态
+  static uint16_t altitude_time = 0; // 维持高度时间
   switch (*mode)
   {
   case 0:
@@ -193,13 +197,10 @@ void Auto_Flight_Ctrl(int16_t *mode)
   break;
   case 18:
   {
-    static uint16_t StateTime = 0;     // 状态保持时间
-    static uint8_t MyState = 0;        // 自定义状态机状态
-    static uint16_t altitude_time = 0; // 维持高度时间
 
-    StateTime++; // 每5ms自增1
+    StateTime++;                                                                                    // 每5ms自增1
     printf("MyState: %d, StateTime: %d, altitude_time: %d, \n", MyState, StateTime, altitude_time); // 打印当前状态和状态保持时间，方便调试观察
-    if (MyState == 0) // 起飞
+    if (MyState == 0)                                                                               // 起飞
     {
       indoor_position_control(0); // 原地定点状态
 
@@ -225,8 +226,8 @@ void Auto_Flight_Ctrl(int16_t *mode)
     }
     else if (MyState == 2)
     {
-      SetFlyCar(1.5f, 0, -30.0f); // 前进
-      if (StateTime >= OneSecond * 1)               // 维持2s后，进入下一个状态
+      SetFlyCar(6.0f, 0, 0.0F);       // 前进
+      if (StateTime >= OneSecond * 1) // 维持2s后，进入下一个状态
       {
         MyState = 3;
         StateTime = 0; // 切换状态时，重置状态保持时间
@@ -244,8 +245,8 @@ void Auto_Flight_Ctrl(int16_t *mode)
     }
     else if (MyState == 4)
     {
-      SetFlyCar(-1.5f, 0, 30.0f); // 后退
-      if (StateTime >= OneSecond * 1)                // 维持2s后，进入下一个状态
+      SetFlyCar(-6.0f, 0, 0.0f);      // 后退
+      if (StateTime >= OneSecond * 1) // 维持2s后，进入下一个状态
       {
         MyState = 5;
         StateTime = 0; // 切换状态时，重置状态保持时间
@@ -263,8 +264,8 @@ void Auto_Flight_Ctrl(int16_t *mode)
     }
     else if (MyState == 6)
     {
-      SetFlyCar(1.5f, 0, -30.0f); // 右移
-      if (StateTime >= OneSecond * 1)              // 维持2s后，进入下一个状态
+      SetFlyCar(0.0f, -6.0f, 0.0f);   // 右移
+      if (StateTime >= OneSecond * 1) // 维持2s后，进入下一个状态
       {
         MyState = 7;
         StateTime = 0; // 切换状态时，重置状态保持时间
@@ -282,8 +283,8 @@ void Auto_Flight_Ctrl(int16_t *mode)
     }
     else if (MyState == 8)
     {
-      SetFlyCar(-1.5f, 0, 30.0f); // 左移
-      if (StateTime >= OneSecond * 1)               // 维持2s后，进入下一个状态
+      SetFlyCar(0.0f, 6.0f, 0.0f);    // 左移
+      if (StateTime >= OneSecond * 1) // 维持2s后，进入下一个状态
       {
         MyState = 9;
         StateTime = 0; // 切换状态时，重置状态保持时间
@@ -315,7 +316,57 @@ void Auto_Flight_Ctrl(int16_t *mode)
   }
   case 19:
   {
+    printf("SpeedT[0]: %.4f, SpeedT[1]: %.4f, SpeedT[2]: %.4f\n", SpeedT[0], SpeedT[1], SpeedT[2]);
+    // printf("SpeedPacket[1]: %.4f\n", SpeedPacket[1]/100.0f);
+    // printf("SpeedPacket[2]: %.4f\n", SpeedPacket[2]/100.0f);
+
     // 用户预留任务，编写后注意加上break跳出
+
+    StateTime++; // 每5ms自增1
+
+    if (MyState == 0) // 起飞
+    {
+      indoor_position_control(0); // 原地定点状态
+
+      if (ins.position_z >= 50.0f)
+      {
+        altitude_time++;
+      }
+      if (altitude_time >= OneSecond * 4) // 当高度达到85cm并维持1s后，进入下一个状态
+      {
+        MyState = 1;
+        StateTime = 0; // 切换状态时，重置状态保持时间
+        altitude_time = 0;
+        // printf("MyState:0->1\n");
+      }
+    }
+    if (MyState == 1) // 使用CYT4控制
+    {
+      // indoor_position_control(0);
+      SpeedT[0] = SpeedPacket[0] / 100.0f;
+      SpeedT[1] = SpeedPacket[1] / 100.0f;
+      SpeedT[2] = SpeedPacket[2] / 100.0f;
+      SetFlyCar(SpeedT[0], SpeedT[1], SpeedT[2]); // CYT4控制
+      if ((fabs(SpeedT[0] - 0.00) <= 0.05) && (fabs(SpeedT[1] - 0.00) <= 0.05))
+      {
+        indoor_position_control(0); // 原地定点
+      }
+
+      if (StateTime >= OneSecond * 5) // 维持5s后，进入下一个状态
+      {
+        MyState = 2;
+        StateTime = 0; // 切换状态时，重置状态保持时间
+      }
+    }
+    if (MyState == 2)
+    {
+      indoor_position_control(0); // 原地定点状态
+      *mode = 28;
+    }
+    maplepilot.yaw_ctrl_mode = ROTATE;
+    // maplepilot.yaw_outer_control_output = rc_data.rc_rpyt[RC_YAW];//顺指针为正
+    flight_altitude_control(ALTHOLD_AUTO_POS_CTRL, 100, NUL); // 高度控制
+    break;
   }
   case 20:
   {
@@ -383,10 +434,24 @@ void Auto_Flight_Ctrl(int16_t *mode)
   break;
   case 28: // SDK模式中原地降落至地面怠速后停桨,用于任务执行完成后降落
   {
+    printf("Case 28\n");
+    printf("");
     indoor_position_control(0);
     maplepilot.yaw_ctrl_mode = ROTATE;
     maplepilot.yaw_outer_control_output = rc_data.rc_rpyt[RC_YAW];
     flight_altitude_control(ALTHOLD_AUTO_VEL_CTRL, NUL, -30); // 高度控制  -50
+    if (ins.position_z <= 50.0f)
+    {
+      altitude_time++;
+    }
+    if (altitude_time >= OneSecond * 5) // 当高度达到85cm并维持1s后，进入下一个状态
+    {
+      rc_data.lock_state = LOCK;
+      altitude_time = 0;
+      StateTime = 0;
+      MyState = 0;
+      *mode = 19;
+    }
   }
   break;
   default:

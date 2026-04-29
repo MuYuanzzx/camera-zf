@@ -272,6 +272,7 @@ void sdk_data_prase_1(uint8_t *data_buf, uint8_t num, vision_target_check *targe
 uint8_t sdk_buf[SDK_DATA_LEN];
 static uint8_t sdk_state_cnt = {0};
 static uint8_t sdk_data_len = 0, sdk_data_cnt = 0;
+//volatile
 
 void sdk_data_receive_prepare_1(uint8_t data)
 {
@@ -279,6 +280,7 @@ void sdk_data_receive_prepare_1(uint8_t data)
   {
     sdk_state_cnt = 1;
     sdk_buf[0] = data;
+    // printf("1\n");
   }
   else if (sdk_state_cnt == 1 && data == 0xFC) // ֡ͷ2
   {
@@ -355,6 +357,7 @@ void RxPacket_to_SpeedPacket(void)
 
 void sdk_data_receive_prepare_2(uint8_t data)
 {
+  // printf("data: %d\n", data);
   if (sdk_state_cnt == 0 && data == 0xFF) // ֡ͷ1
   {
     sdk_state_cnt = 1;
@@ -381,6 +384,7 @@ void sdk_data_receive_prepare_2(uint8_t data)
       SpeedPacket[0] = TempSpeedPacket[0];
       SpeedPacket[1] = TempSpeedPacket[1];  
       SpeedPacket[2] = TempSpeedPacket[2];
+
     }
     else
     {
