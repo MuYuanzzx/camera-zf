@@ -347,6 +347,7 @@ void Auto_Flight_Ctrl(int16_t *mode)
       SpeedT[1] = SpeedPacket[1] / 100.0f;
       SpeedT[2] = SpeedPacket[2] / 100.0f;
       SetFlyCar(SpeedT[0], SpeedT[1], SpeedT[2]); // CYT4控制
+      printf("SpeedT[0]: %.4f, SpeedT[1]: %.4f, SpeedT[2]: %.4f\n", SpeedT[0], SpeedT[1], SpeedT[2]);
       if ((fabs(SpeedT[0] - 0.00) <= 0.05) && (fabs(SpeedT[1] - 0.00) <= 0.05))
       {
         indoor_position_control(0); // 原地定点

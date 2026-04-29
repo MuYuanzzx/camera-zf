@@ -628,7 +628,7 @@ void TrackFly_Beacon(void)
         // 根据 beacon_PX/PY 的方向决定速度正负
         if (fabs(beacon_PY) > 5)
         {
-            vx = (beacon_PY > 0) ? 10 : -10; // 上偏则向前，下偏则向后
+            vx = (beacon_PY > 0) ? 2 : -2; // 上偏则向前，下偏则向后
         }
         else
         {
@@ -636,7 +636,7 @@ void TrackFly_Beacon(void)
         }
         if (fabs(beacon_PX) > 5)
         {
-            vy = (beacon_PX > 0) ? 10 : -10; // 右偏则向右，左偏则向左
+            vy = (beacon_PX > 0) ? 2 : -2; // 右偏则向右，左偏则向左
         }
         else
         {
