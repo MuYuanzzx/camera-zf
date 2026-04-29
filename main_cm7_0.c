@@ -591,12 +591,14 @@ int TrackCar_Beacon(void)
     int16_t vx = 0, vy = 0, vw = 0;
     if (no_car_led == 1)
     {
+        SetCarSpeed(vx, vy, vw);
         return 0;
     }
 
     // 仅当有信标灯检测到时才移动小车
     if (!is_fly_beacon_detected)
     {
+        SetCarSpeed(vx, vy, vw);
         return 0;
     }
 
