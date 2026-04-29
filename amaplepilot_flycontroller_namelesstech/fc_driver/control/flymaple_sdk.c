@@ -272,7 +272,7 @@ void sdk_data_prase_1(uint8_t *data_buf, uint8_t num, vision_target_check *targe
 uint8_t sdk_buf[SDK_DATA_LEN];
 static uint8_t sdk_state_cnt = {0};
 static uint8_t sdk_data_len = 0, sdk_data_cnt = 0;
-//volatile
+// volatile
 
 void sdk_data_receive_prepare_1(uint8_t data)
 {
@@ -316,10 +316,10 @@ void sdk_data_receive_prepare_1(uint8_t data)
     sdk_state_cnt = 0;
 }
 
-uint8_t Serial_RxPacket[6]; // 接收数据缓存
-volatile uint8_t pRxPacket = 0;      // 接收数据计数
+uint8_t Serial_RxPacket[6];     // 接收数据缓存
+volatile uint8_t pRxPacket = 0; // 接收数据计数
 int16_t TempSpeedPacket[3];     // 速度数据缓存
-int16_t SpeedPacket[3];     // 速度数据缓存
+int16_t SpeedPacket[3];         // 速度数据缓存
 
 /**
  * @brief  发送端：取 int16_t[3] 每个元素的最后一位（bit0）求和校验
@@ -382,16 +382,14 @@ void sdk_data_receive_prepare_2(uint8_t data)
     {
       sdk_state_cnt = 0;
       SpeedPacket[0] = TempSpeedPacket[0];
-      SpeedPacket[1] = TempSpeedPacket[1];  
+      SpeedPacket[1] = TempSpeedPacket[1];
       SpeedPacket[2] = TempSpeedPacket[2];
-
     }
     else
     {
       sdk_state_cnt = 0;
       // 校验失败处理（如丢弃数据、记录错误等）
     }
-    
   }
   else
     sdk_state_cnt = 0;

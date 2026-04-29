@@ -7,12 +7,6 @@
 #define MT9V03X_H 120
 #define IMAGE_SIZE (MT9V03X_W * MT9V03X_H)
 
-#include <math.h>
-
-#define MT9V03X_W 188
-#define MT9V03X_H 120
-#define IMAGE_SIZE (MT9V03X_W * MT9V03X_H)
-
 #define BOUNDARY_NUM (MT9V03X_H * 2)
 
 int16 bright_center_x = MT9V03X_W / 2;
@@ -27,21 +21,25 @@ int16 PX = 0;
 int16 PY = 0;
 
 uint8_t is_beacon_detected = 0;
+uint8_t is_fly_beacon_detected = 0; // 飞控追踪的信标灯是否检测到
+
+// 信标灯中心坐标（图像坐标系：左上角(0,0)，x向右，y向下）
+int16_t beacon_cx = -1; // 选中的信标灯中心 x（像素坐标 [0,187]）
+int16_t beacon_cy = -1; // 选中的信标灯中心 y（像素坐标 [0,119]）
+
+// 信标灯相对于图像中心的偏移量（与 PX/PY 类似，但用于飞控）
+int16_t beacon_PX = 0; // beacon_cx - CenterX（右为正）
+int16_t beacon_PY = 0; // -(beacon_cy - CenterY)（上为正）
+
 uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 
 // ===================== 参数区 =====================
 #define GRAY_THRESH 110
 #define BIN_THRESH 35
 #define AREA_MIN 5
-#define K_ROT 0.1f
-#define K_FWD 1.0f
-#define K_TRANS 0.125f
 #define PX_DEAD1 30
 #define PX_DEAD2 4
 #define PY_DEAD 10
-#define VW_MAX 150
-#define VX_MAX 200
-#define VY_MAX 200
 #define SEARCH_VW 70
 #define LED1 P19_0
 // =================================================
@@ -59,13 +57,6 @@ typedef enum
 
 static BeaconState current_state = BEACON_STATE_LOST;
 
-typedef enum
-{
-    LIGHT_TYPE_POINT,
-    LIGHT_TYPE_LINE
-} LightType;
-
-LightType current_light_type = LIGHT_TYPE_POINT;
 int16_t direct_dx = 0;
 
 typedef struct
@@ -74,6 +65,7 @@ typedef struct
     int16_t minx, maxx, miny, maxy;
     uint32_t area;
     float max_ratio;
+    uint32_t sum_pixel; // 像素亮度总和（用于判断最亮的信标灯）
 } Blob;
 
 Blob blobs[8];
@@ -108,6 +100,46 @@ void SetCarSpeed(int16_t vx, int16_t vy, int16_t vw)
     uart_write_byte(UART_0, 0xAB);
     uart_write_buffer(UART_0, RxPacket, 6);
     uart_write_byte(UART_0, 0xBA);
+}
+
+// ===================== 飞控通讯 =====================
+// 飞控与小车共用同一个串口 UART_0（仅帧格式不同用于区分）
+// 小车帧格式：0xAB + 6字节 + 0xBA
+// 飞控帧格式：0xFF 0xFC + 6字节(3xint16小端) + 1字节校验和
+#define FLY_CONTROL_UART UART_0
+
+// 飞控接收解析函数参考：flymaple_sdk.c -> sdk_data_receive_prepare_2()
+// 帧格式: 0xFF 0xFC + 6字节数据(3个int16小端) + 1字节校验和(最低位之和)
+static uint8_t FlyTxPacket[9];
+
+static void FlyPacket_Checksum(uint8_t *packet, const int16_t speed[3])
+{
+    // 帧头
+    packet[0] = 0xFF;
+    packet[1] = 0xFC;
+    // 数据：小端模式 (低位在前)
+    packet[2] = (uint8_t)(speed[0] & 0xFF);
+    packet[3] = (uint8_t)((speed[0] >> 8) & 0xFF);
+    packet[4] = (uint8_t)(speed[1] & 0xFF);
+    packet[5] = (uint8_t)((speed[1] >> 8) & 0xFF);
+    packet[6] = (uint8_t)(speed[2] & 0xFF);
+    packet[7] = (uint8_t)((speed[2] >> 8) & 0xFF);
+    // 校验：三个int16最低位之和
+    packet[8] = (speed[0] & 0x01) + (speed[1] & 0x01) + (speed[2] & 0x01);
+}
+
+/**
+ * @brief  通过串口发送速度指令给飞控（无名创新枫叶飞控）
+ * @param  vx  前向速度 (cm/s)
+ * @param  vy  侧向速度 (cm/s)
+ * @param  vw  偏航角速度 (deg/s)
+ * @note   飞控端由 UART5_IRQHandler -> sdk_data_receive_prepare_2() 解析
+ */
+void SetFlySpeed(int16_t vx, int16_t vy, int16_t vw)
+{
+    int16_t speed_buf[3] = {vx, vy, vw};
+    FlyPacket_Checksum(FlyTxPacket, speed_buf);
+    uart_write_buffer(FLY_CONTROL_UART, FlyTxPacket, 9);
 }
 void UpdateBeaconPos(int16_t x, int16_t y)
 {
@@ -146,6 +178,7 @@ void find_all_blobs(void)
 
                 int64_t sum_x = 0, sum_y = 0;
                 uint32_t area = 0;
+                uint32_t sum_pixel = 0;
                 int16_t minx = MT9V03X_W, maxx = 0, miny = MT9V03X_H, maxy = 0;
 
                 while (top > 0)
@@ -157,6 +190,7 @@ void find_all_blobs(void)
                     sum_x += cx;
                     sum_y += cy;
                     area++;
+                    sum_pixel += image_copy[cy][cx];
                     if (cx < minx)
                         minx = cx;
                     if (cx > maxx)
@@ -197,6 +231,7 @@ void find_all_blobs(void)
                 blobs[blob_cnt].maxy = maxy;
                 blobs[blob_cnt].area = area;
                 blobs[blob_cnt].max_ratio = max_ratio;
+                blobs[blob_cnt].sum_pixel = sum_pixel;
                 blob_cnt++;
             }
         }
@@ -237,6 +272,9 @@ void find_bright_center(void)
 
     find_all_blobs();
 
+    is_beacon_detected = 0;
+    is_fly_beacon_detected = 0;
+
     if (blob_cnt == 0)
     {
         for (int8_t dy = -1; dy <= 1; dy++)
@@ -254,6 +292,8 @@ void find_bright_center(void)
         }
         return;
     }
+
+    is_beacon_detected = 1;
 
     int bar_idx = 0;
     float max_ratio = blobs[0].max_ratio;
@@ -456,6 +496,58 @@ void find_bright_center(void)
         }
     }
 
+    // 从圆形信标灯中选出最亮的（飞控追踪目标）
+    // 如果有多个亮度接近的（最高亮度的90%以上），选最接近图像中心的
+    is_fly_beacon_detected = 0;
+    beacon_cx = -1;
+    beacon_cy = -1;
+    {
+        int16_t fly_choice_idx = -1;
+        uint32_t max_sum_pixel = 0;
+
+        // 第一轮：找最大亮度
+        for (int i = 0; i < blob_cnt; i++)
+        {
+            if (i == bar_idx)
+                continue;
+            if (blobs[i].sum_pixel > max_sum_pixel)
+                max_sum_pixel = blobs[i].sum_pixel;
+        }
+
+        if (max_sum_pixel > 0)
+        {
+            uint32_t brightness_thresh = (max_sum_pixel * 90) / 100; // 最高亮度的90%
+            uint32_t min_dist_sq = (uint32_t)-1;
+
+            // 第二轮：在亮度 >= threshold 的 blob 中选最近图像中心的
+            for (int i = 0; i < blob_cnt; i++)
+            {
+                if (i == bar_idx)
+                    continue;
+                if (blobs[i].sum_pixel >= brightness_thresh)
+                {
+                    int16_t dx_fly = blobs[i].cx - CenterX;
+                    int16_t dy_fly = blobs[i].cy - CenterY;
+                    uint32_t dist_sq = (uint32_t)(dx_fly * dx_fly + dy_fly * dy_fly);
+                    if (dist_sq < min_dist_sq)
+                    {
+                        min_dist_sq = dist_sq;
+                        fly_choice_idx = i;
+                    }
+                }
+            }
+        }
+
+        if (fly_choice_idx >= 0)
+        {
+            is_fly_beacon_detected = 1;
+            beacon_cx = blobs[fly_choice_idx].cx;
+            beacon_cy = blobs[fly_choice_idx].cy;
+            beacon_PX = beacon_cx - CenterX;    // 右为正
+            beacon_PY = -(beacon_cy - CenterY); // 上为正
+        }
+    }
+
     for (int i = 0; i < blob_cnt; i++)
     {
         if (i == bar_idx)
@@ -478,104 +570,118 @@ void find_bright_center(void)
         }
     }
 }
-void TrackBeacon()
-{
-    int16_t vx = 0, vy = 0, vw = 0;
-    switch (current_state)
-    {
-    case BEACON_STATE_LOST:
-        if (is_beacon_detected)
-            current_state = (abs(PX) > PX_DEAD2) ? BEACON_STATE_ALIGNING : BEACON_STATE_TRACKING;
-        break;
-    case BEACON_STATE_ALIGNING:
-        if (abs(PX) <= PX_DEAD2)
-            current_state = BEACON_STATE_TRACKING;
-        break;
-    case BEACON_STATE_TRACKING:
-        if (!is_beacon_detected)
-            current_state = BEACON_STATE_LOST;
-        break;
-    }
-    current_state = BEACON_STATE_TRACKING;
-    switch (current_state)
-    {
-    case BEACON_STATE_LOST:
-        vw = SEARCH_VW;
-        vx = 0;
-        vy = 0;
-        break;
-    case BEACON_STATE_ALIGNING:
-        if (abs(PX) > PX_DEAD1)
-            vw = PX > 0 ? 35 : -35;
-        else if (abs(PX) > PX_DEAD2)
-            vw = PX > 0 ? 15 : -15;
-        else
-            vw = 0;
-        vx = 0;
-        vy = 0;
-        break;
-
-    case BEACON_STATE_TRACKING: // 暂时默认进入跟踪状态，仅调试
-        if (abs(direct_dx) > 6)
-        {
-            vx = 0;
-            vy = 0;
-            vw = (int16_t)(7.0f * fabs(direct_dx) + 50.0f);
-            vw = (direct_dx > 0) ? -vw : vw;
-        }
-        else
-        {
-            vw = 0;
-            if (abs(PY) > PY_DEAD)
-            {
-                vx = (int16_t)(3.4f * fabs(PY) + 35.0f);
-                vx = (PY > 0) ? -vx : vx;
-            }
-            if (abs(PX - (-10)) > PY_DEAD)
-            {
-                // ===================== 修复2：显式浮点转整数（消除警告）=====================
-                vy = (int16_t)(3.4f * fabs(PX - (-10)) + 35.0f);
-                // ==========================================================================
-                vy = (PX - (-10) > 0) ? -vy : vy;
-            }
-        }
-        break;
-
-    default:
-        current_state = BEACON_STATE_LOST;
-        vw = SEARCH_VW;
-        vx = 0;
-        vy = 0;
-    }
-    SetCarSpeed(vx, vy, vw);
-    printf("Vx:%d,Vy:%d,Vw:%d,Angle:%d\n", vx, vy, vw, direct_dx);
-}
-
-void Angle_Alignment()
+/**
+ * @brief  小车跟随飞机（原 TrackBeacon 的 BEACON_STATE_TRACKING 部分）
+ *         通过条形灯角度和位置偏差控制小车速度和转向
+ */
+void TrackCar_FollowFly(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
 
-    // ===================== 修复2：使用 fabsf() 处理浮点数 =====================
-    if (fabsf(dir_led_angle) > 15)
+    if (abs(direct_dx) > 6)
     {
-        vw = dir_led_angle > 0 ? 35 : -35;
-    }
-    else if (fabsf(dir_led_angle) > 0)
-    {
-        vw = dir_led_angle > 0 ? 15 : -15;
+        vx = 0;
+        vy = 0;
+        vw = (int16_t)(7.0f * fabs(direct_dx) + 50.0f);
+        vw = (direct_dx > 0) ? -vw : vw;
     }
     else
     {
         vw = 0;
+        if (abs(PY) > PY_DEAD)
+        {
+            vx = (int16_t)(3.4f * fabs(PY) + 35.0f);
+            vx = (PY > 0) ? -vx : vx;
+        }
+        if (abs(PX - (-10)) > PY_DEAD)
+        {
+            vy = (int16_t)(3.4f * fabs(PX - (-10)) + 35.0f);
+            vy = (PX - (-10) > 0) ? -vy : vy;
+        }
     }
-    // ==========================================================================
-
-    vx = 0;
-    vy = 0;
 
     SetCarSpeed(vx, vy, vw);
-    printf("Vx:%d,Vy:%d,Vw:%d,Angle:%.2f\n", vx, vy, vw, dir_led_angle);
 }
+
+/**
+ * @brief  飞机飞向信标灯
+ *         检测到信标灯 → vx=±10, vy=±10 飞向灯（方向由 beacon_PX/PY 决定）
+ *         未检测到信标灯 → 原地不动
+ */
+void TrackFly_Beacon(void)
+{
+    int16_t vx = 0, vy = 0, vw = 0;
+
+    if (is_fly_beacon_detected)
+    {
+        // 根据 beacon_PX/PY 的方向决定速度正负
+        vx = (beacon_PY > 0) ? 10 : -10; // 上偏则向前，下偏则向后
+        vy = (beacon_PX > 0) ? 10 : -10; // 右偏则向右，左偏则向左
+        vw = 0;                          // 不旋转
+    }
+    else
+    {
+        // 未检测到信标灯，原地不动
+        vx = 0;
+        vy = 0;
+        vw = 0;
+    }
+
+    SetFlySpeed(vx, vy, vw);
+}
+
+// /**
+//  * @brief  小车寻灯追踪（保留原 TrackBeacon 的状态机逻辑，用于小车）
+//  */
+// void TrackBeacon(void)
+// {
+//     int16_t vx = 0, vy = 0, vw = 0;
+//     switch (current_state)
+//     {
+//     case BEACON_STATE_LOST:
+//         if (is_beacon_detected)
+//             current_state = (abs(PX) > PX_DEAD2) ? BEACON_STATE_ALIGNING : BEACON_STATE_TRACKING;
+//         break;
+//     case BEACON_STATE_ALIGNING:
+//         if (abs(PX) <= PX_DEAD2)
+//             current_state = BEACON_STATE_TRACKING;
+//         break;
+//     case BEACON_STATE_TRACKING:
+//         if (!is_beacon_detected)
+//             current_state = BEACON_STATE_LOST;
+//         break;
+//     }
+//     switch (current_state)
+//     {
+//     case BEACON_STATE_LOST:
+//         vw = SEARCH_VW;
+//         vx = 0;
+//         vy = 0;
+//         break;
+//     case BEACON_STATE_ALIGNING:
+//         if (abs(PX) > PX_DEAD1)
+//             vw = PX > 0 ? 35 : -35;
+//         else if (abs(PX) > PX_DEAD2)
+//             vw = PX > 0 ? 15 : -15;
+//         else
+//             vw = 0;
+//         vx = 0;
+//         vy = 0;
+//         break;
+
+//     case BEACON_STATE_TRACKING:
+//         TrackCar_FollowFly();
+//         // TrackCar_FollowFly 内部已调用 SetCarSpeed，此处直接返回
+//         return;
+
+//     default:
+//         current_state = BEACON_STATE_LOST;
+//         vw = SEARCH_VW;
+//         vx = 0;
+//         vy = 0;
+//     }
+//     SetCarSpeed(vx, vy, vw);
+// }
 
 int main(void)
 {
@@ -590,22 +696,22 @@ int main(void)
         system_delay_ms(500);
     }
 
-    seekfree_assistant_camera_information_config(
-        SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
-        MT9V03X_W, MT9V03X_H);
+    // seekfree_assistant_camera_information_config(
+    //     SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
+    //     MT9V03X_W, MT9V03X_H);
 
-    seekfree_assistant_camera_boundary_config(
-        XY_BOUNDARY, BOUNDARY_NUM,
-        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
-    seekfree_assistant_camera_information_config(
-        SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
-        MT9V03X_W, MT9V03X_H);
+    // seekfree_assistant_camera_boundary_config(
+    //     XY_BOUNDARY, BOUNDARY_NUM,
+    //     xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
+    //     xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
+    // seekfree_assistant_camera_information_config(
+    //     SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
+    //     MT9V03X_W, MT9V03X_H);
 
-    seekfree_assistant_camera_boundary_config(
-        XY_BOUNDARY, BOUNDARY_NUM,
-        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
+    // seekfree_assistant_camera_boundary_config(
+    //     XY_BOUNDARY, BOUNDARY_NUM,
+    //     xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
+    //     xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
 
     while (1)
     {
@@ -623,7 +729,8 @@ int main(void)
             }
 
             find_bright_center();
-            TrackBeacon();
+            TrackFly_Beacon();    // 飞机飞向信标灯
+            TrackCar_FollowFly(); // 小车直接移动到飞机正下方
         }
         system_delay_ms(1);
     }
