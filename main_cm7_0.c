@@ -134,10 +134,14 @@ static void FlyPacket_Checksum(uint8_t *packet, const int16_t speed[3])
  * @param  vy  侧向速度 (cm/s)
  * @param  vw  偏航角速度 (deg/s)
  * @note   飞控端由 UART5_IRQHandler -> sdk_data_receive_prepare_2() 解析
+ *         内部将 float 转为 int16_t 后按 6字节小端协议发送
  */
-void SetFlySpeed(int16_t vx, int16_t vy, int16_t vw)
+void SetFlySpeed(float vx, float vy, float vw)
 {
-    int16_t speed_buf[3] = {vx, vy, vw};
+    int16_t speed_buf[3];
+    speed_buf[0] = (int16_t)vx;
+    speed_buf[1] = (int16_t)vy;
+    speed_buf[2] = (int16_t)vw;
     FlyPacket_Checksum(FlyTxPacket, speed_buf);
     uart_write_buffer(FLY_CONTROL_UART, FlyTxPacket, 9);
 }
@@ -621,39 +625,39 @@ int TrackCar_FollowFly(void)
  */
 void TrackFly_Beacon(void)
 {
-    int16_t vx = 0, vy = 0, vw = 0;
+    float vx = 0.0f, vy = 0.0f, vw = 0.0f;
 
     if (is_fly_beacon_detected)
     {
         // 根据 beacon_PX/PY 的方向决定速度正负
         if (fabs(beacon_PY) > 5)
         {
-            vx = (beacon_PY > 0) ? 2 : -2; // 上偏则向前，下偏则向后
+            vx = (beacon_PY > 0) ? 2.0f : -2.0f; // 上偏则向前，下偏则向后
         }
         else
         {
-            vx = 0; // 前后不动
+            vx = 0.0f; // 前后不动
         }
         if (fabs(beacon_PX) > 5)
         {
-            vy = (beacon_PX > 0) ? 2 : -2; // 右偏则向右，左偏则向左
+            vy = (beacon_PX > 0) ? 2.0f : -2.0f; // 右偏则向右，左偏则向左
         }
         else
         {
-            vy = 0; // 左右不动
+            vy = 0.0f; // 左右不动
         }
-        vw = 0; // 不旋转
+        vw = 0.0f; // 不旋转
     }
     else
     {
         // 未检测到信标灯，原地不动
-        vx = 0;
-        vy = 0;
-        vw = 0;
+        vx = 0.0f;
+        vy = 0.0f;
+        vw = 0.0f;
     }
 
     SetFlySpeed(vx, vy, vw);
-    // printf("vx:%d, vy:%d, vw:%d\n", vx, vy, vw);
+    // printf("vx:%.1f, vy:%.1f, vw:%.1f\n", vx, vy, vw);
 }
 
 int main(void)
