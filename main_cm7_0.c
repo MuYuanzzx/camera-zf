@@ -279,6 +279,7 @@ void find_bright_center(void)
 
     if (blob_cnt == 0)
     {
+        no_car_led = 1;
         for (int8_t dy = -1; dy <= 1; dy++)
         {
             for (int8_t dx = -1; dx <= 1; dx++)
@@ -583,7 +584,7 @@ void find_bright_center(void)
 int TrackCar_FollowFly(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
-    if(no_car_led == 1 )
+    if (no_car_led == 1)
     {
         return 0;
     }
@@ -641,7 +642,7 @@ void TrackFly_Beacon(void)
         {
             vy = 0; // 左右不动
         }
-        vw = 0;                          // 不旋转
+        vw = 0; // 不旋转
     }
     else
     {
@@ -653,7 +654,6 @@ void TrackFly_Beacon(void)
 
     SetFlySpeed(vx, vy, vw);
     // printf("vx:%d, vy:%d, vw:%d\n", vx, vy, vw);
-    
 }
 
 int main(void)
@@ -704,7 +704,7 @@ int main(void)
             find_bright_center();
             TrackFly_Beacon();    // 飞机飞向信标灯
             TrackCar_FollowFly(); // 小车直接移动到飞机正下方
-            //seekfree_assistant_camera_send();
+            // seekfree_assistant_camera_send();
         }
         system_delay_ms(1);
     }
