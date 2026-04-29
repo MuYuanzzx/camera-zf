@@ -583,8 +583,20 @@ void find_bright_center(void)
 }
 /**
  * @brief  小车向信标灯平移
- *         利用 beacon_PX/beacon_PY 控制小车平移前往信标灯位置
- *         不旋转（vw=0），完全平移
+ *         利用 beacon_PX/beacon_PY 并通过条形灯角度（dir_led_angle）做坐标系旋转，
+ *         将信标灯从图像坐标系转换到小车坐标系，控制小车平移前往信标灯位置。
+ *         不旋转（vw=0），完全平移。
+ *
+ *         图像坐标系：
+ *           PX: 右为正（beacon 在图像右侧 > 0）
+ *           PY: 上为正（beacon 在图像上方 > 0）
+ *         小车坐标系（小车朝向 = dir_led_angle）：
+ *           vx: 前进为正
+ *           vy: 右移为正
+ *
+ *         当 dir_led_angle=0（小车朝向与图像 Y 轴对齐）：
+ *           beacon_PY > 0（上方）→ vx > 0（前进）?
+ *           beacon_PX > 0（右边）→ vy > 0（右移）?
  */
 int TrackCar_Beacon(void)
 {
@@ -602,23 +614,29 @@ int TrackCar_Beacon(void)
         return 0;
     }
 
-    // 直接使用信标灯的偏移量 beacon_PX/beacon_PY 进行平移
-    // beacon_PY: 上为正 → 小车前后方向（摄像头前向 = 小车前向）
-    // beacon_PX: 右为正 → 小车左右方向
     vw = 0; // 不旋转，纯平移
 
-    // 前后方向（PY 方向）
-    if (abs(beacon_PY) > PY_DEAD)
+    // 将 beacon 从图像坐标系旋转到小车坐标系
+    float angle_rad = -dir_led_angle * PI / 180.0f; // 图像→小车（负向旋转）
+    float cos_a = cosf(angle_rad);
+    float sin_a = sinf(angle_rad);
+
+    // 旋转后：car_dx = 小车右方偏移，car_dy = 小车前方偏移
+    float car_dx = beacon_PX * cos_a + beacon_PY * sin_a;
+    float car_dy = -beacon_PX * sin_a + beacon_PY * cos_a;
+
+    // 前后方向（小车前进方向）：car_dy > 0 → 信标在前方 → 前进
+    if (fabs(car_dy) > PY_DEAD)
     {
-        vx = (int16_t)(3.4f * fabs(beacon_PY) + 35.0f);
-        vx = (beacon_PY > 0) ? -vx : vx; // beacon_PY>0（信标在上方）→小车后退，让信标落到图像下方
+        vx = (int16_t)(3.4f * fabs(car_dy) + 35.0f);
+        vx = (car_dy > 0) ? vx : -vx;
     }
 
-    // 左右方向（PX 方向）
-    if (abs(beacon_PX) > PY_DEAD)
+    // 左右方向（小车右方）：car_dx > 0 → 信标在右边 → 右移
+    if (fabs(car_dx) > PY_DEAD)
     {
-        vy = (int16_t)(3.4f * fabs(beacon_PX) + 35.0f);
-        vy = (beacon_PX > 0) ? -vy : vy; // beacon_PX>0（信标在右边）→小车左移，让信标回到中央
+        vy = (int16_t)(3.4f * fabs(car_dx) + 35.0f);
+        vy = (car_dx > 0) ? vy : -vy;
     }
 
     SetCarSpeed(vx, vy, vw);
