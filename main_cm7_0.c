@@ -39,7 +39,7 @@ uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 #define AREA_MIN 5
 #define PX_DEAD1 30
 #define PX_DEAD2 4
-#define PY_DEAD 10
+#define PY_DEAD 5
 #define SEARCH_VW 70
 #define LED1 P19_0
 // =================================================
@@ -257,6 +257,8 @@ float calculate_vertical_angle(int16_t top_x, int16_t top_y, int16_t bottom_x, i
     return deg;
 }
 
+uint8_t no_car_led = 0;
+
 void find_bright_center(void)
 {
     memset(xy_x2_boundary, 0, sizeof(xy_x2_boundary));
@@ -349,40 +351,44 @@ void find_bright_center(void)
     }
 
     direct_dx = dir_top_x - dir_bottom_x;
-
-    // 2. 如果垂直方向没找到（如水平灯），则找水平方向最左/最右点
+    no_car_led = 0;
     if (dir_top_x == -1 || dir_bottom_x == -1)
     {
-        int16_t left_x = cx, left_y = cy;
-        int16_t right_x = cx, right_y = cy;
-        int16_t min_x_val = MT9V03X_W, max_x_val = 0;
-
-        for (int y = miny; y <= maxy; y++)
-        {
-            for (int x = minx; x <= maxx; x++)
-            {
-                if (image_copy[y][x] > BIN_THRESH)
-                {
-                    if (x < min_x_val)
-                    {
-                        min_x_val = x;
-                        left_x = x;
-                        left_y = y;
-                    }
-                    if (x > max_x_val)
-                    {
-                        max_x_val = x;
-                        right_x = x;
-                        right_y = y;
-                    }
-                }
-            }
-        }
-        dir_top_x = left_x;
-        dir_top_y = left_y;
-        dir_bottom_x = right_x;
-        dir_bottom_y = right_y;
+        no_car_led = 1;
     }
+    // 2. 如果垂直方向没找到（如水平灯），则找水平方向最左/最右点
+    // if (dir_top_x == -1 || dir_bottom_x == -1)
+    // {
+    //     int16_t left_x = cx, left_y = cy;
+    //     int16_t right_x = cx, right_y = cy;
+    //     int16_t min_x_val = MT9V03X_W, max_x_val = 0;
+
+    //     for (int y = miny; y <= maxy; y++)
+    //     {
+    //         for (int x = minx; x <= maxx; x++)
+    //         {
+    //             if (image_copy[y][x] > BIN_THRESH)
+    //             {
+    //                 if (x < min_x_val)
+    //                 {
+    //                     min_x_val = x;
+    //                     left_x = x;
+    //                     left_y = y;
+    //                 }
+    //                 if (x > max_x_val)
+    //                 {
+    //                     max_x_val = x;
+    //                     right_x = x;
+    //                     right_y = y;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     dir_top_x = left_x;
+    //     dir_top_y = left_y;
+    //     dir_bottom_x = right_x;
+    //     dir_bottom_y = right_y;
+    // }
     // =========================================================================
 
     if (dir_top_x != -1 && dir_bottom_x != -1)
@@ -574,10 +580,13 @@ void find_bright_center(void)
  * @brief  小车跟随飞机（原 TrackBeacon 的 BEACON_STATE_TRACKING 部分）
  *         通过条形灯角度和位置偏差控制小车速度和转向
  */
-void TrackCar_FollowFly(void)
+int TrackCar_FollowFly(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
-
+    if(no_car_led == 1 )
+    {
+        return 0;
+    }
     if (abs(direct_dx) > 6)
     {
         vx = 0;
@@ -593,14 +602,15 @@ void TrackCar_FollowFly(void)
             vx = (int16_t)(3.4f * fabs(PY) + 35.0f);
             vx = (PY > 0) ? -vx : vx;
         }
-        if (abs(PX - (-10)) > PY_DEAD)
+        if (abs(PX - (32)) > PY_DEAD)
         {
-            vy = (int16_t)(3.4f * fabs(PX - (-10)) + 35.0f);
-            vy = (PX - (-10) > 0) ? -vy : vy;
+            vy = (int16_t)(3.4f * fabs(PX - (32)) + 35.0f);
+            vy = (PX - (32) > 0) ? -vy : vy;
         }
     }
 
     SetCarSpeed(vx, vy, vw);
+    printf("\nvx:%d, vy:%d, vw:%d\n", vx, vy, vw);
 }
 
 /**
@@ -615,8 +625,22 @@ void TrackFly_Beacon(void)
     if (is_fly_beacon_detected)
     {
         // 根据 beacon_PX/PY 的方向决定速度正负
-        vx = (beacon_PY > 0) ? 10 : -10; // 上偏则向前，下偏则向后
-        vy = (beacon_PX > 0) ? 10 : -10; // 右偏则向右，左偏则向左
+        if (fabs(beacon_PY) > 5)
+        {
+            vx = (beacon_PY > 0) ? 10 : -10; // 上偏则向前，下偏则向后
+        }
+        else
+        {
+            vx = 0; // 前后不动
+        }
+        if (fabs(beacon_PX) > 5)
+        {
+            vy = (beacon_PX > 0) ? 10 : -10; // 右偏则向右，左偏则向左
+        }
+        else
+        {
+            vy = 0; // 左右不动
+        }
         vw = 0;                          // 不旋转
     }
     else
@@ -628,6 +652,8 @@ void TrackFly_Beacon(void)
     }
 
     SetFlySpeed(vx, vy, vw);
+    // printf("vx:%d, vy:%d, vw:%d\n", vx, vy, vw);
+    
 }
 
 int main(void)
@@ -643,22 +669,22 @@ int main(void)
         system_delay_ms(500);
     }
 
-    // seekfree_assistant_camera_information_config(
-    //     SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
-    //     MT9V03X_W, MT9V03X_H);
+    seekfree_assistant_camera_information_config(
+        SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
+        MT9V03X_W, MT9V03X_H);
 
-    // seekfree_assistant_camera_boundary_config(
-    //     XY_BOUNDARY, BOUNDARY_NUM,
-    //     xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-    //     xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
-    // seekfree_assistant_camera_information_config(
-    //     SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
-    //     MT9V03X_W, MT9V03X_H);
+    seekfree_assistant_camera_boundary_config(
+        XY_BOUNDARY, BOUNDARY_NUM,
+        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
+        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
+    seekfree_assistant_camera_information_config(
+        SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
+        MT9V03X_W, MT9V03X_H);
 
-    // seekfree_assistant_camera_boundary_config(
-    //     XY_BOUNDARY, BOUNDARY_NUM,
-    //     xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-    //     xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
+    seekfree_assistant_camera_boundary_config(
+        XY_BOUNDARY, BOUNDARY_NUM,
+        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
+        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
 
     while (1)
     {
@@ -678,6 +704,7 @@ int main(void)
             find_bright_center();
             TrackFly_Beacon();    // 飞机飞向信标灯
             TrackCar_FollowFly(); // 小车直接移动到飞机正下方
+            //seekfree_assistant_camera_send();
         }
         system_delay_ms(1);
     }

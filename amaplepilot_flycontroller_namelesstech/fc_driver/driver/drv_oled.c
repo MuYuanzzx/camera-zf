@@ -1152,7 +1152,7 @@ void noled_init(void)
   //  OLED_Fill(0x00); //初始清屏
   //  OLED_Set_Pos(0,0);
   Draw_Logo();
-  delay_ms(100);
+  delay_ms(2000);
   OLED_Fill(0x00); // 初始清屏
 }
 
