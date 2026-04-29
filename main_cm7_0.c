@@ -582,82 +582,90 @@ void find_bright_center(void)
     }
 }
 /**
- * @brief  小车跟随飞机（原 TrackBeacon 的 BEACON_STATE_TRACKING 部分）
- *         通过条形灯角度和位置偏差控制小车速度和转向
+ * @brief  小车向信标灯平移
+ *         利用 beacon_PX/beacon_PY 控制小车平移前往信标灯位置
+ *         不旋转（vw=0），完全平移
  */
-int TrackCar_FollowFly(void)
+int TrackCar_Beacon(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
     if (no_car_led == 1)
     {
         return 0;
     }
-    if (abs(direct_dx) > 6)
+
+    // 仅当有信标灯检测到时才移动小车
+    if (!is_fly_beacon_detected)
     {
-        vx = 0;
-        vy = 0;
-        vw = (int16_t)(7.0f * fabs(direct_dx) + 50.0f);
-        vw = (direct_dx > 0) ? -vw : vw;
+        return 0;
     }
-    else
+
+    // 直接使用信标灯的偏移量 beacon_PX/beacon_PY 进行平移
+    // beacon_PY: 上为正 → 小车前后方向（摄像头前向 = 小车前向）
+    // beacon_PX: 右为正 → 小车左右方向
+    vw = 0; // 不旋转，纯平移
+
+    // 前后方向（PY 方向）
+    if (abs(beacon_PY) > PY_DEAD)
     {
-        vw = 0;
-        if (abs(PY) > PY_DEAD)
-        {
-            vx = (int16_t)(3.4f * fabs(PY) + 35.0f);
-            vx = (PY > 0) ? -vx : vx;
-        }
-        if (abs(PX - (32)) > PY_DEAD)
-        {
-            vy = (int16_t)(3.4f * fabs(PX - (32)) + 35.0f);
-            vy = (PX - (32) > 0) ? -vy : vy;
-        }
+        vx = (int16_t)(3.4f * fabs(beacon_PY) + 35.0f);
+        vx = (beacon_PY > 0) ? -vx : vx; // beacon_PY>0（信标在上方）→小车后退，让信标落到图像下方
+    }
+
+    // 左右方向（PX 方向）
+    if (abs(beacon_PX) > PY_DEAD)
+    {
+        vy = (int16_t)(3.4f * fabs(beacon_PX) + 35.0f);
+        vy = (beacon_PX > 0) ? -vy : vy; // beacon_PX>0（信标在右边）→小车左移，让信标回到中央
     }
 
     SetCarSpeed(vx, vy, vw);
-    printf("\nvx:%d, vy:%d, vw:%d\n", vx, vy, vw);
+    // printf("car  vx:%d, vy:%d, vw:%d\n", vx, vy, vw);
 }
 
 /**
- * @brief  飞机飞向信标灯
- *         检测到信标灯 → vx=±10, vy=±10 飞向灯（方向由 beacon_PX/PY 决定）
- *         未检测到信标灯 → 原地不动
+ * @brief  飞机跟随小车移动
+ *         使用小车条形灯的偏移量 PX/PY，控制飞机保持在小车正上方
+ *         未检测到条形灯 → 原地悬停
  */
-void TrackFly_Beacon(void)
+void TrackFly_Car(void)
 {
     float vx = 0.0f, vy = 0.0f, vw = 0.0f;
 
-    if (is_fly_beacon_detected)
+    if (!no_car_led)
     {
-        // 根据 beacon_PX/PY 的方向决定速度正负
-        if (fabs(beacon_PY) > 5)
+        // 使用条形灯偏移量 PX/PY（条形灯 = 小车位置）
+        // PY: 上为正 → 飞机前后方向
+        if (abs(PY) > PY_DEAD)
         {
-            vx = (beacon_PY > 0) ? 70.0f : -70.0f; // 上偏则向前，下偏则向后
+            vx = (PY > 0) ? 10.0f : -10.0f; // 小车偏上 → 飞机向前追
         }
         else
         {
-            vx = 0.0f; // 前后不动
+            vx = 0.0f;
         }
-        if (fabs(beacon_PX) > 5)
+
+        // PX: 右为正 → 飞机左右方向
+        if (abs(PX) > PY_DEAD)
         {
-            vy = (beacon_PX > 0) ? 70.0f : -70.0f; // 右偏则向右，左偏则向左
+            vy = (PX > 0) ? 10.0f : -10.0f; // 小车偏右 → 飞机向右追
         }
         else
         {
-            vy = 0.0f; // 左右不动
+            vy = 0.0f;
         }
-        vw = 0.0f; // 不旋转
+        vw = 0.0f;
     }
     else
     {
-        // 未检测到信标灯，原地不动
+        // 未检测到小车条形灯，原地悬停
         vx = 0.0f;
         vy = 0.0f;
         vw = 0.0f;
     }
 
     SetFlySpeed(vx, vy, vw);
-    // printf("vx:%.1f, vy:%.1f, vw:%.1f\n", vx, vy, vw);
+    // printf("fly vx:%.1f, vy:%.1f, vw:%.1f\n", vx, vy, vw);
 }
 
 int main(void)
@@ -706,8 +714,8 @@ int main(void)
             }
 
             find_bright_center();
-            TrackFly_Beacon();    // 飞机飞向信标灯
-            TrackCar_FollowFly(); // 小车直接移动到飞机正下方
+            TrackCar_Beacon(); // 小车平移向信标灯
+            TrackFly_Car();    // 飞机跟随小车条形灯
             // seekfree_assistant_camera_send();
         }
         system_delay_ms(1);
