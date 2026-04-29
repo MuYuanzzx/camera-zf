@@ -630,59 +630,6 @@ void TrackFly_Beacon(void)
     SetFlySpeed(vx, vy, vw);
 }
 
-// /**
-//  * @brief  小车寻灯追踪（保留原 TrackBeacon 的状态机逻辑，用于小车）
-//  */
-// void TrackBeacon(void)
-// {
-//     int16_t vx = 0, vy = 0, vw = 0;
-//     switch (current_state)
-//     {
-//     case BEACON_STATE_LOST:
-//         if (is_beacon_detected)
-//             current_state = (abs(PX) > PX_DEAD2) ? BEACON_STATE_ALIGNING : BEACON_STATE_TRACKING;
-//         break;
-//     case BEACON_STATE_ALIGNING:
-//         if (abs(PX) <= PX_DEAD2)
-//             current_state = BEACON_STATE_TRACKING;
-//         break;
-//     case BEACON_STATE_TRACKING:
-//         if (!is_beacon_detected)
-//             current_state = BEACON_STATE_LOST;
-//         break;
-//     }
-//     switch (current_state)
-//     {
-//     case BEACON_STATE_LOST:
-//         vw = SEARCH_VW;
-//         vx = 0;
-//         vy = 0;
-//         break;
-//     case BEACON_STATE_ALIGNING:
-//         if (abs(PX) > PX_DEAD1)
-//             vw = PX > 0 ? 35 : -35;
-//         else if (abs(PX) > PX_DEAD2)
-//             vw = PX > 0 ? 15 : -15;
-//         else
-//             vw = 0;
-//         vx = 0;
-//         vy = 0;
-//         break;
-
-//     case BEACON_STATE_TRACKING:
-//         TrackCar_FollowFly();
-//         // TrackCar_FollowFly 内部已调用 SetCarSpeed，此处直接返回
-//         return;
-
-//     default:
-//         current_state = BEACON_STATE_LOST;
-//         vw = SEARCH_VW;
-//         vx = 0;
-//         vy = 0;
-//     }
-//     SetCarSpeed(vx, vy, vw);
-// }
-
 int main(void)
 {
     clock_init(SYSTEM_CLOCK_250M);
