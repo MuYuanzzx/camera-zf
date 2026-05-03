@@ -42,6 +42,11 @@ uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 #define PY_DEAD 5
 #define SEARCH_VW 70
 #define LED1 P19_0
+
+// 平行对齐专用参数（无角度计算，纯像素控制）
+#define ALIGN_DX_DEAD 2     // 水平偏移死区（像素），小于此值视为对齐
+#define ALIGN_KP 3          // 旋转比例系数
+#define MAX_ROTATE_SPEED 60 // 最大旋转速度限制
 // =================================================
 
 // 8邻域
@@ -57,7 +62,7 @@ typedef enum
 
 static BeaconState current_state = BEACON_STATE_LOST;
 
-int16_t direct_dx = 0;
+int16_t direct_dx = 0; // 条形灯上下端点水平差（核心对齐变量，原代码已有）
 
 typedef struct
 {
@@ -103,39 +108,22 @@ void SetCarSpeed(int16_t vx, int16_t vy, int16_t vw)
 }
 
 // ===================== 飞控通讯 =====================
-// 飞控与小车共用同一个串口 UART_0（仅帧格式不同用于区分）
-// 小车帧格式：0xAB + 6字节 + 0xBA
-// 飞控帧格式：0xFF 0xFC + 6字节(3xint16小端) + 1字节校验和
 #define FLY_CONTROL_UART UART_0
-
-// 飞控接收解析函数参考：flymaple_sdk.c -> sdk_data_receive_prepare_2()
-// 帧格式: 0xFF 0xFC + 6字节数据(3个int16小端) + 1字节校验和(最低位之和)
 static uint8_t FlyTxPacket[9];
 
 static void FlyPacket_Checksum(uint8_t *packet, const int16_t speed[3])
 {
-    // 帧头
     packet[0] = 0xFF;
     packet[1] = 0xFC;
-    // 数据：小端模式 (低位在前)
     packet[2] = (uint8_t)(speed[0] & 0xFF);
     packet[3] = (uint8_t)((speed[0] >> 8) & 0xFF);
     packet[4] = (uint8_t)(speed[1] & 0xFF);
     packet[5] = (uint8_t)((speed[1] >> 8) & 0xFF);
     packet[6] = (uint8_t)(speed[2] & 0xFF);
     packet[7] = (uint8_t)((speed[2] >> 8) & 0xFF);
-    // 校验：三个int16最低位之和
     packet[8] = (speed[0] & 0x01) + (speed[1] & 0x01) + (speed[2] & 0x01);
 }
 
-/**
- * @brief  通过串口发送速度指令给飞控（无名创新枫叶飞控）
- * @param  vx  前向速度 (cm/s)
- * @param  vy  侧向速度 (cm/s)
- * @param  vw  偏航角速度 (deg/s)
- * @note   飞控端由 UART5_IRQHandler -> sdk_data_receive_prepare_2() 解析
- *         内部将 float 转为 int16_t 后按 6字节小端协议发送
- */
 void SetFlySpeed(float vx, float vy, float vw)
 {
     int16_t speed_buf[3];
@@ -145,6 +133,7 @@ void SetFlySpeed(float vx, float vy, float vw)
     FlyPacket_Checksum(FlyTxPacket, speed_buf);
     uart_write_buffer(FLY_CONTROL_UART, FlyTxPacket, 9);
 }
+
 void UpdateBeaconPos(int16_t x, int16_t y)
 {
     if (x < 0)
@@ -263,6 +252,7 @@ float calculate_vertical_angle(int16_t top_x, int16_t top_y, int16_t bottom_x, i
 
 uint8_t no_car_led = 0;
 
+// ===================== 原函数完全不变 =====================
 void find_bright_center(void)
 {
     memset(xy_x2_boundary, 0, sizeof(xy_x2_boundary));
@@ -321,11 +311,9 @@ void find_bright_center(void)
 
     UpdateBeaconPos(cx, cy);
 
-    // ===================== 修复1：完善端点检测逻辑 =====================
     float top_max_dist_sq = -1.0f;
     float bottom_max_dist_sq = -1.0f;
 
-    // 1. 优先尝试垂直方向寻找端点
     for (int y = miny; y <= maxy; y++)
     {
         for (int x = minx; x <= maxx; x++)
@@ -361,40 +349,6 @@ void find_bright_center(void)
     {
         no_car_led = 1;
     }
-    // 2. 如果垂直方向没找到（如水平灯），则找水平方向最左/最右点
-    // if (dir_top_x == -1 || dir_bottom_x == -1)
-    // {
-    //     int16_t left_x = cx, left_y = cy;
-    //     int16_t right_x = cx, right_y = cy;
-    //     int16_t min_x_val = MT9V03X_W, max_x_val = 0;
-
-    //     for (int y = miny; y <= maxy; y++)
-    //     {
-    //         for (int x = minx; x <= maxx; x++)
-    //         {
-    //             if (image_copy[y][x] > BIN_THRESH)
-    //             {
-    //                 if (x < min_x_val)
-    //                 {
-    //                     min_x_val = x;
-    //                     left_x = x;
-    //                     left_y = y;
-    //                 }
-    //                 if (x > max_x_val)
-    //                 {
-    //                     max_x_val = x;
-    //                     right_x = x;
-    //                     right_y = y;
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     dir_top_x = left_x;
-    //     dir_top_y = left_y;
-    //     dir_bottom_x = right_x;
-    //     dir_bottom_y = right_y;
-    // }
-    // =========================================================================
 
     if (dir_top_x != -1 && dir_bottom_x != -1)
     {
@@ -507,8 +461,6 @@ void find_bright_center(void)
         }
     }
 
-    // 从圆形信标灯中选出最亮的（飞控追踪目标）
-    // 如果有多个亮度接近的（最高亮度的90%以上），选最接近图像中心的
     is_fly_beacon_detected = 0;
     beacon_cx = -1;
     beacon_cy = -1;
@@ -516,7 +468,6 @@ void find_bright_center(void)
         int16_t fly_choice_idx = -1;
         uint32_t max_sum_pixel = 0;
 
-        // 第一轮：找最大亮度
         for (int i = 0; i < blob_cnt; i++)
         {
             if (i == bar_idx)
@@ -527,10 +478,9 @@ void find_bright_center(void)
 
         if (max_sum_pixel > 0)
         {
-            uint32_t brightness_thresh = (max_sum_pixel * 90) / 100; // 最高亮度的90%
+            uint32_t brightness_thresh = (max_sum_pixel * 90) / 100;
             uint32_t min_dist_sq = (uint32_t)-1;
 
-            // 第二轮：在亮度 >= threshold 的 blob 中选最近图像中心的
             for (int i = 0; i < blob_cnt; i++)
             {
                 if (i == bar_idx)
@@ -554,8 +504,8 @@ void find_bright_center(void)
             is_fly_beacon_detected = 1;
             beacon_cx = blobs[fly_choice_idx].cx;
             beacon_cy = blobs[fly_choice_idx].cy;
-            beacon_PX = beacon_cx - CenterX;    // 右为正
-            beacon_PY = -(beacon_cy - CenterY); // 上为正
+            beacon_PX = beacon_cx - CenterX;
+            beacon_PY = -(beacon_cy - CenterY);
         }
     }
 
@@ -581,94 +531,99 @@ void find_bright_center(void)
         }
     }
 }
+
+// ===================== 全新封装：平行对齐函数（无角度计算，核心！） =====================
 /**
- * @brief  小车向信标灯平移
- *         利用 beacon_PX/beacon_PY 并通过条形灯角度（dir_led_angle）做坐标系旋转，
- *         将信标灯从图像坐标系转换到小车坐标系，控制小车平移前往信标灯位置。
- *         不旋转（vw=0），完全平移。
- *
- *         图像坐标系：
- *           PX: 右为正（beacon 在图像右侧 > 0）
- *           PY: 上为正（beacon 在图像上方 > 0）
- *         小车坐标系（小车朝向 = dir_led_angle）：
- *           vx: 前进为正
- *           vy: 右移为正
- *
- *         当 dir_led_angle=0（小车朝向与图像 Y 轴对齐）：
- *           beacon_PY > 0（上方）→ vx > 0（前进）?
- *           beacon_PX > 0（右边）→ vy > 0（右移）?
+ * @brief  小车与镜头平行对齐
+ * @note   不计算角度，仅用条形灯水平差direct_dx控制旋转
+ *         目标：镜头方向与条形灯平行
+ * @retval 旋转速度vw
  */
+int16_t Car_Align_Parallel(void)
+{
+    int16_t vw = 0;
+
+    // 未检测到灯条，不旋转
+    if(no_car_led == 1)
+        return 0;
+
+    // 核心：通过条形灯上下端点水平偏移量控制旋转（无任何角度计算）
+    if (abs(direct_dx) > ALIGN_DX_DEAD)
+    {
+        // 比例控制：偏移越大，旋转越快
+        vw = (int16_t)(direct_dx * ALIGN_KP);
+
+        // 限制最大旋转速度，防止失控
+        if (vw > MAX_ROTATE_SPEED)
+            vw = MAX_ROTATE_SPEED;
+        if (vw < -MAX_ROTATE_SPEED)
+            vw = -MAX_ROTATE_SPEED;
+    }
+
+    return vw;
+}
+
+// ===================== 原追踪函数，仅调用新对齐函数 =====================
 int TrackCar_Beacon(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
-    if (no_car_led == 1)
+
+    // 未检测到目标 → 停车
+    if (no_car_led == 1 || !is_fly_beacon_detected)
     {
         SetCarSpeed(vx, vy, vw);
         return 0;
     }
 
-    // 仅当有信标灯检测到时才移动小车
-    if (!is_fly_beacon_detected)
-    {
-        SetCarSpeed(vx, vy, vw);
-        return 0;
-    }
+    // 1. 调用新封装的平行对齐函数，获取旋转速度
+    vw = Car_Align_Parallel();
 
-    vw = 0; // 不旋转，纯平移
-
-    // 将 beacon 从图像坐标系旋转到小车坐标系
-    float angle_rad = -dir_led_angle * PI / 180.0f; // 图像→小车（负向旋转）
+    // 2. 坐标系转换（原有平移逻辑不变）
+    float angle_rad = -dir_led_angle * PI / 180.0f;
     float cos_a = cosf(angle_rad);
     float sin_a = sinf(angle_rad);
 
-    // 旋转后：car_dx = 小车右方偏移，car_dy = 小车前方偏移
     float car_dx = beacon_PX * cos_a + beacon_PY * sin_a;
     float car_dy = -beacon_PX * sin_a + beacon_PY * cos_a;
 
-    // 前后方向（小车前进方向）：car_dy > 0 → 信标在前方 → 前进
+    // 前后平移
     if (fabs(car_dy) > PY_DEAD)
     {
         vx = (int16_t)(3.4f * fabs(car_dy) + 35.0f);
         vx = (car_dy > 0) ? vx : -vx;
     }
 
-    // 左右方向（小车右方）：car_dx > 0 → 信标在右边 → 右移
+    // 左右平移
     if (fabs(car_dx) > PY_DEAD)
     {
         vy = (int16_t)(3.4f * fabs(car_dx) + 35.0f);
         vy = (car_dx > 0) ? vy : -vy;
     }
 
+    // 发送指令：平移 + 平行对齐
     SetCarSpeed(vx, vy, vw);
-    // printf("car  vx:%d, vy:%d, vw:%d\n", vx, vy, vw);
+    return 1;
 }
 
-/**
- * @brief  飞机跟随小车移动
- *         使用小车条形灯的偏移量 PX/PY，控制飞机保持在小车正上方
- *         未检测到条形灯 → 原地悬停
- */
+// ===================== 原无人机函数完全不变 =====================
 void TrackFly_Car(void)
 {
     float vx = 0.0f, vy = 0.0f, vw = 0.0f;
 
     if (!no_car_led)
     {
-        // 使用条形灯偏移量 PX/PY（条形灯 = 小车位置）
-        // PY: 上为正 → 飞机前后方向
         if (abs(PY) > PY_DEAD)
         {
-            vx = (PY > 0) ? 10.0f : -10.0f; // 小车偏上 → 飞机向前追
+            vx = (PY > 0) ? 10.0f : -10.0f;
         }
         else
         {
             vx = 0.0f;
         }
 
-        // PX: 右为正 → 飞机左右方向
         if (abs(PX) > PY_DEAD)
         {
-            vy = (PX > 0) ? 10.0f : -10.0f; // 小车偏右 → 飞机向右追
+            vy = (PX > 0) ? 10.0f : -10.0f;
         }
         else
         {
@@ -678,14 +633,12 @@ void TrackFly_Car(void)
     }
     else
     {
-        // 未检测到小车条形灯，原地悬停
         vx = 0.0f;
         vy = 0.0f;
         vw = 0.0f;
     }
 
     SetFlySpeed(vx, vy, vw);
-    // printf("fly vx:%.1f, vy:%.1f, vw:%.1f\n", vx, vy, vw);
 }
 
 int main(void)
@@ -701,14 +654,6 @@ int main(void)
         system_delay_ms(500);
     }
 
-    seekfree_assistant_camera_information_config(
-        SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
-        MT9V03X_W, MT9V03X_H);
-
-    seekfree_assistant_camera_boundary_config(
-        XY_BOUNDARY, BOUNDARY_NUM,
-        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
     seekfree_assistant_camera_information_config(
         SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
         MT9V03X_W, MT9V03X_H);
@@ -734,9 +679,8 @@ int main(void)
             }
 
             find_bright_center();
-            TrackCar_Beacon(); // 小车平移向信标灯
-            TrackFly_Car();    // 飞机跟随小车条形灯
-            // seekfree_assistant_camera_send();
+            TrackCar_Beacon();
+            TrackFly_Car();
         }
         system_delay_ms(1);
     }
