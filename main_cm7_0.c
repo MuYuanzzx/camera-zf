@@ -46,7 +46,7 @@ typedef enum { BEACON_STATE_LOST, BEACON_STATE_ALIGNING, BEACON_STATE_TRACKING }
 static BeaconState current_state = BEACON_STATE_LOST;
 int16_t direct_dx = 0;
 
-// ===== Blob结构 =====
+// ===== Blob?? =====
 typedef struct
 {
     int16_t cx, cy;
@@ -59,14 +59,14 @@ typedef struct
 Blob blobs[8];
 uint8_t blob_cnt = 0;
 
-// ===== L型双垂直条灯结构：两个互相独立且垂直的长条灯，直角拐点方向即小车正前方 =====
+// ===== L??????????????????????????????????? =====
 typedef struct
 {
-    int16_t corner_x;         // L型拐点 x（小车正前方）
-    int16_t corner_y;         // L型拐点 y
-    uint8_t idx_strip1;       // 条灯1索引
-    uint8_t idx_strip2;       // 条灯2索引
-    float angle;              // 小车朝向角度（相对于图像Y轴，顺时针为正）
+    int16_t corner_x;         // L??? x???????
+    int16_t corner_y;         // L??? y
+    uint8_t idx_strip1;       // ??1??
+    uint8_t idx_strip2;       // ??2??
+    float angle;              // ????????????Y????????
 } LShapeLED;
 
 LShapeLED lshape_led;
@@ -133,8 +133,9 @@ void UpdateBeaconPos(int16_t x, int16_t y)
     if (y >= MT9V03X_H) y = MT9V03X_H - 1;
     bright_center_x = x;
     bright_center_y = y;
-    PY = -(bright_center_y - CenterY);
-    PX = bright_center_x - CenterX;
+    
+    PY = -(bright_center_y - beacon_cy);
+    PX = bright_center_x -  beacon_cx ;
 }
 
 void find_all_blobs(void)
@@ -213,8 +214,8 @@ void find_all_blobs(void)
 }
 
 /**
- * 判断一个blob是否是长条灯（高长宽比）
- * 长条灯的max_ratio > 2，圆形信标灯的max_ratio ≈ 1
+ * ????blob????????????
+ * ????max_ratio > 2???????max_ratio ? 1
  */
 uint8_t is_strip_led(const Blob *blob)
 {
@@ -222,8 +223,8 @@ uint8_t is_strip_led(const Blob *blob)
 }
 
 /**
- * 判断两个blob是否互相垂直
- * 一个主要水平（w > h），一个主要垂直（h > w）
+ * ????blob??????
+ * ???????w > h?????????h > w?
  */
 uint8_t are_perpendicular(const Blob *strip1, const Blob *strip2)
 {
@@ -232,31 +233,31 @@ uint8_t are_perpendicular(const Blob *strip1, const Blob *strip2)
     int16_t w2 = strip2->maxx - strip2->minx;
     int16_t h2 = strip2->maxy - strip2->miny;
 
-    // 如果一个主要水平，一个主要垂直，则互相垂直
+    // ?????????????????????
     if ((w1 > h1 && w2 < h2) || (w1 < h1 && w2 > h2))
         return 1;
     return 0;
 }
 
 /**
- * 计算L型拐点的方向角度（小车朝向）
- * L型两条条灯形成的角的角平分线反方向 = 车头正前方
+ * ??L??????????????
+ * L????????????????? = ?????
  */
 float calculate_lshape_angle(int16_t corner_x, int16_t corner_y,
                               int16_t strip1_cx, int16_t strip1_cy,
                               int16_t strip2_cx, int16_t strip2_cy)
 {
-    // 从拐点出发，两条条灯的方向向量
+    // ???????????????
     float vec1_x = (float)(strip1_cx - corner_x);
     float vec1_y = (float)(strip1_cy - corner_y);
     float vec2_x = (float)(strip2_cx - corner_x);
     float vec2_y = (float)(strip2_cy - corner_y);
 
-    // 小车朝向：L型"开口方向"的反方向（即两条条灯方向的和向量的反方向）
+    // ?????L?"????"?????????????????????
     float front_x = -(vec1_x + vec2_x);
     float front_y = -(vec1_y + vec2_y);
 
-    // 计算角度（相对于图像Y轴，顺时针为正）
+    // ??????????Y????????
     float angle = atan2f(front_x, front_y) * 180.0f / PI;
 
     return angle;
@@ -264,7 +265,7 @@ float calculate_lshape_angle(int16_t corner_x, int16_t corner_y,
 
 uint8_t no_car_led = 0;
 
-// ===================== 原函数完全不变 =====================
+// ===================== ??????? =====================
 void find_bright_center(void)
 {
     memset(xy_x2_boundary, 0, sizeof(xy_x2_boundary));
@@ -275,7 +276,7 @@ void find_bright_center(void)
     int cnt_red = 0;
     int cnt_yel = 0;
 
-    // L型条灯初始化
+    // L??????
     lshape_led.corner_x = lshape_led.corner_y = -1;
     lshape_led.idx_strip1 = 255;
     lshape_led.idx_strip2 = 255;
@@ -308,123 +309,111 @@ void find_bright_center(void)
     is_beacon_detected = 1;
     no_car_led = 0;
 
-    // ===== L型双条灯识别 =====
-    // 第一步：找出所有长条灯（排除圆形信标）
+    // ===== L?????? =====
+    // ???????????????????
     uint8_t strip_indices[8];
     uint8_t strip_cnt = 0;
 
     for (int i = 0; i < blob_cnt && strip_cnt < 4; i++)
     {
-        if (is_strip_led(&blobs[i]))
+        if (blobs[i].max_ratio > max_ratio)
         {
-            strip_indices[strip_cnt] = i;
-            strip_cnt++;
+            max_ratio = blobs[i].max_ratio;
+            bar_idx = i;
         }
     }
 
-    // 第二步：寻找互相垂直的两个条灯组成L型
-    uint8_t found_lshape = 0;
+    Blob bar_blob = blobs[bar_idx];
+    int16_t cx = bar_blob.cx;
+    int16_t cy = bar_blob.cy;
+    int16_t minx = bar_blob.minx, maxx = bar_blob.maxx;
+    int16_t miny = bar_blob.miny, maxy = bar_blob.maxy;
 
-    if (strip_cnt >= 2)
+    
+    // ===================== ??1????????? =====================
+    float top_max_dist_sq = -1.0f;
+    float bottom_max_dist_sq = -1.0f;
+    
+    // 1. ????????????
+    for (int y = miny; y <= maxy; y++)
     {
-        for (int i = 0; i < strip_cnt && !found_lshape; i++)
+        for (int x = minx; x <= maxx; x++)
         {
-            for (int j = i + 1; j < strip_cnt && !found_lshape; j++)
+            if (image_copy[y][x] > BIN_THRESH)
             {
-                if (are_perpendicular(&blobs[strip_indices[i]], &blobs[strip_indices[j]]))
+                float dist_sq = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+                if (y < cy)
                 {
-                    uint8_t idx1 = strip_indices[i];
-                    uint8_t idx2 = strip_indices[j];
-
-                    Blob *s1 = &blobs[idx1];
-                    Blob *s2 = &blobs[idx2];
-
-                    // 计算L型拐点：找两个条灯中距离最近的像素点对，取其中点作为拐点
-                    float min_dist = 1e9f;
-                    int16_t best_x1 = s1->cx, best_x2 = s2->cx;
-                    int16_t best_y1 = s1->cy, best_y2 = s2->cy;
-
-                    for (int y = s1->miny; y <= s1->maxy; y += 2)
+                    if (dist_sq > top_max_dist_sq)
                     {
-                        for (int x = s1->minx; x <= s1->maxx; x++)
-                        {
-                            if (image_copy[y][x] > BIN_THRESH)
-                            {
-                                for (int y2 = s2->miny; y2 <= s2->maxy; y2 += 2)
-                                {
-                                    for (int x2 = s2->minx; x2 <= s2->maxx; x2++)
-                                    {
-                                        if (image_copy[y2][x2] > BIN_THRESH)
-                                        {
-                                            float dist = sqrtf((float)(x - x2) * (x - x2) + (y - y2) * (y - y2));
-                                            if (dist < min_dist)
-                                            {
-                                                min_dist = dist;
-                                                best_x1 = x;  best_y1 = y;
-                                                best_x2 = x2; best_y2 = y2;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        top_max_dist_sq = dist_sq;
+                        dir_top_x = x;
+                        dir_top_y = y;
                     }
-
-                    // 拐点取最近两点的中点
-                    int16_t corner_x = (best_x1 + best_x2) / 2;
-                    int16_t corner_y = (best_y1 + best_y2) / 2;
-
-                    lshape_led.corner_x = corner_x;
-                    lshape_led.corner_y = corner_y;
-                    lshape_led.idx_strip1 = idx1;
-                    lshape_led.idx_strip2 = idx2;
-
-                    // 计算小车朝向角度（L型开口的角平分线反方向）
-                    lshape_led.angle = calculate_lshape_angle(
-                        corner_x, corner_y,
-                        s1->cx, s1->cy,
-                        s2->cx, s2->cy
-                    );
-
-                    found_lshape = 1;
+                }
+                else if (y > cy)
+                {
+                    if (dist_sq > bottom_max_dist_sq)
+                    {
+                        bottom_max_dist_sq = dist_sq;
+                        dir_bottom_x = x;
+                        dir_bottom_y = y;
+                    }
                 }
             }
         }
     }
-
-    if (!found_lshape)
+    
+    direct_dx = dir_top_x - dir_bottom_x;
+    no_car_led = 0;
+    if (dir_top_x == -1 || dir_bottom_x == -1)
     {
         no_car_led = 1;
-        for (int8_t dy = -1; dy <= 1; dy++)
-        {
-            for (int8_t dx = -1; dx <= 1; dx++)
-            {
-                int16_t x = MT9V03X_W / 2 + dx, y = MT9V03X_H / 2 + dy;
-                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_red < BOUNDARY_NUM)
-                {
-                    xy_x2_boundary[cnt_red] = x;
-                    xy_y2_boundary[cnt_red] = y;
-                    cnt_red++;
-                }
-            }
-        }
-        return;
     }
+    // 2. ????????????????????????/???
+    // if (dir_top_x == -1 || dir_bottom_x == -1)
+    // {
+        //     int16_t left_x = cx, left_y = cy;
+        //     int16_t right_x = cx, right_y = cy;
+        //     int16_t min_x_val = MT9V03X_W, max_x_val = 0;
+        
+        //     for (int y = miny; y <= maxy; y++)
+        //     {
+            //         for (int x = minx; x <= maxx; x++)
+            //         {
+                //             if (image_copy[y][x] > BIN_THRESH)
+                //             {
+                    //                 if (x < min_x_val)
+                    //                 {
+                        //                     min_x_val = x;
+                        //                     left_x = x;
+                        //                     left_y = y;
+                        //                 }
+                        //                 if (x > max_x_val)
+                        //                 {
+                            //                     max_x_val = x;
+                            //                     right_x = x;
+                            //                     right_y = y;
+                            //                 }
+                            //             }
+                            //         }
+                            //     }
+                            //     dir_top_x = left_x;
+                            //     dir_top_y = left_y;
+                            //     dir_bottom_x = right_x;
+                            //     dir_bottom_y = right_y;
+                            // }
+                            // =========================================================================
+                            
 
-    // 使用L型条灯的拐点作为小车位置（摄像头正下方 = 直角拐点）
-    UpdateBeaconPos(lshape_led.corner_x, lshape_led.corner_y);
-
-    // 更新全局角度变量（兼容原有代码）
-    dir_led_angle = lshape_led.angle;
-
-    // ===== 边界点标记 =====
-    {
-        for (int8_t dy = -1; dy <= 1; dy++)
-        {
-            for (int8_t dx = -1; dx <= 1; dx++)
-            {
-                int16_t x = lshape_led.corner_x + dx, y = lshape_led.corner_y + dy;
-                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_yel < BOUNDARY_NUM)
+                            
+                            {
+                                for (int8_t dy = -1; dy <= 1; dy++)
+                                {
+                                    for (int8_t dx = -1; dx <= 1; dx++)
+                                    {
+                                        int16_t x = cx + dx, y = cy + dy;
+                                        if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_yel < BOUNDARY_NUM)
                 {
                     xy_x3_boundary[cnt_yel] = x;
                     xy_y3_boundary[cnt_yel] = y;
@@ -433,7 +422,7 @@ void find_bright_center(void)
             }
         }
 
-        // 条灯1中心附近
+        // ??1????
         if (lshape_led.idx_strip1 < blob_cnt)
         {
             Blob *s1 = &blobs[lshape_led.idx_strip1];
@@ -452,7 +441,7 @@ void find_bright_center(void)
             }
         }
 
-        // 条灯2中心附近
+        // ??2????
         if (lshape_led.idx_strip2 < blob_cnt)
         {
             Blob *s2 = &blobs[lshape_led.idx_strip2];
@@ -471,34 +460,35 @@ void find_bright_center(void)
             }
         }
     }
-
-    // 从圆形信标灯中选出最亮的（飞控追踪目标）
+    
+    // ????????????????????
     is_fly_beacon_detected = 0;
     beacon_cx = -1;
     beacon_cy = -1;
     {
         int16_t fly_choice_idx = -1;
         uint32_t max_sum_pixel = 0;
-
-        // 第一轮：找最大亮度（排除两个条灯）
+        
+        // ?????????
         for (int i = 0; i < blob_cnt; i++)
         {
-            if (i == lshape_led.idx_strip1 || i == lshape_led.idx_strip2)
-                continue;
+            if (i == bar_idx)
+            continue;
             if (blobs[i].sum_pixel > max_sum_pixel)
-                max_sum_pixel = blobs[i].sum_pixel;
+            max_sum_pixel = blobs[i].sum_pixel;
         }
-
+        
         if (max_sum_pixel > 0)
         {
             uint32_t brightness_thresh = (max_sum_pixel * 90) / 100;
             uint32_t brightness_thresh = (max_sum_pixel * 90) / 100;
             uint32_t min_dist_sq = (uint32_t)-1;
-
+            
+            // ??????? >= threshold ? blob ?????????
             for (int i = 0; i < blob_cnt; i++)
             {
-                if (i == lshape_led.idx_strip1 || i == lshape_led.idx_strip2)
-                    continue;
+                if (i == bar_idx)
+                continue;
                 if (blobs[i].sum_pixel >= brightness_thresh)
                 {
                     int16_t dx_fly = blobs[i].cx - CenterX;
@@ -512,7 +502,7 @@ void find_bright_center(void)
                 }
             }
         }
-
+        
         if (fly_choice_idx >= 0)
         {
             is_fly_beacon_detected = 1;
@@ -523,8 +513,10 @@ void find_bright_center(void)
             beacon_PX = beacon_cx - CenterX;
             beacon_PY = -(beacon_cy - CenterY);
         }
+        
+        UpdateBeaconPos(cx, cy);
     }
-
+    
     for (int i = 0; i < blob_cnt; i++)
     {
         if (i == lshape_led.idx_strip1 || i == lshape_led.idx_strip2)
@@ -557,29 +549,28 @@ int TrackCar_Beacon(void)
         SetCarSpeed(vx, vy, vw);
         return 0;
     }
-
-    vw = 0;
-
-    float angle_rad = -dir_led_angle * PI / 180.0f;
-    float cos_a = cosf(angle_rad);
-    float sin_a = sinf(angle_rad);
-
-    float car_dx = beacon_PX * cos_a + beacon_PY * sin_a;
-    float car_dy = -beacon_PX * sin_a + beacon_PY * cos_a;
-
-    if (fabs(car_dy) > PY_DEAD)
+    if (abs(direct_dx) > 6)
     {
-        vx = (int16_t)(3.4f * fabs(car_dy) + 35.0f);
-        vx = (car_dy > 0) ? vx : -vx;
+        vx = 0;
+        vy = 0;
+        vw = (int16_t)(4.0f * fabs(direct_dx) + 5.0f);
+        vw = (direct_dx > 0) ? -vw : vw;
+    }
+    else
+    {
+        vw = 0;
+        if (abs(PY) > PY_DEAD)
+        {
+            vx = (int16_t)(0.5f * fabs(PY) + 20.0f);
+            vx = (PY > 0) ? -vx : vx;
+        }
+        if (abs(PX) > PY_DEAD)
+        {
+            vy = (int16_t)(0.5f * fabs(PX) + 20.0f);
+            vy = (PX > 0) ? -vy : vy;
+        }
     }
 
-    if (fabs(car_dx) > PY_DEAD)
-    {
-        vy = (int16_t)(3.4f * fabs(car_dx) + 35.0f);
-        vy = (car_dx > 0) ? vy : -vy;
-    }
-
-    // 发送指令：平移 + 平行对齐
     SetCarSpeed(vx, vy, vw);
 }
 
@@ -589,7 +580,7 @@ void TrackFly_Car(void)
 
     if (!no_car_led)
     {
-        // PX/PY是拐点的偏移量（拐点 = 小车位置）
+        // PX/PY?????????? = ?????
         if (abs(PY) > PY_DEAD)
         {
             vx = (PY > 0) ? 10.0f : -10.0f;
