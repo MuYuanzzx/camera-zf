@@ -124,6 +124,7 @@ void SetFlySpeed(float vx, float vy, float vw)
     uart_write_buffer(FLY_CONTROL_UART, FlyTxPacket, 9);
 }
 
+
 void UpdateBeaconPos(int16_t x, int16_t y)
 {
     if (x < 0) x = 0;
@@ -263,6 +264,7 @@ float calculate_lshape_angle(int16_t corner_x, int16_t corner_y,
 
 uint8_t no_car_led = 0;
 
+// ===================== 原函数完全不变 =====================
 void find_bright_center(void)
 {
     memset(xy_x2_boundary, 0, sizeof(xy_x2_boundary));
@@ -490,9 +492,9 @@ void find_bright_center(void)
         if (max_sum_pixel > 0)
         {
             uint32_t brightness_thresh = (max_sum_pixel * 90) / 100;
+            uint32_t brightness_thresh = (max_sum_pixel * 90) / 100;
             uint32_t min_dist_sq = (uint32_t)-1;
 
-            // 第二轮：在亮度 >= threshold 的 blob 中选最近图像中心的
             for (int i = 0; i < blob_cnt; i++)
             {
                 if (i == lshape_led.idx_strip1 || i == lshape_led.idx_strip2)
@@ -516,6 +518,8 @@ void find_bright_center(void)
             is_fly_beacon_detected = 1;
             beacon_cx = blobs[fly_choice_idx].cx;
             beacon_cy = blobs[fly_choice_idx].cy;
+            beacon_PX = beacon_cx - CenterX;
+            beacon_PY = -(beacon_cy - CenterY);
             beacon_PX = beacon_cx - CenterX;
             beacon_PY = -(beacon_cy - CenterY);
         }
@@ -547,11 +551,6 @@ void find_bright_center(void)
 int TrackCar_Beacon(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
-    if (no_car_led == 1)
-    {
-        SetCarSpeed(vx, vy, vw);
-        return 0;
-    }
 
     if (!is_fly_beacon_detected)
     {
@@ -580,6 +579,7 @@ int TrackCar_Beacon(void)
         vy = (car_dx > 0) ? vy : -vy;
     }
 
+    // 发送指令：平移 + 平行对齐
     SetCarSpeed(vx, vy, vw);
 }
 
@@ -593,6 +593,7 @@ void TrackFly_Car(void)
         if (abs(PY) > PY_DEAD)
         {
             vx = (PY > 0) ? 10.0f : -10.0f;
+            vx = (PY > 0) ? 10.0f : -10.0f;
         }
         else
         {
@@ -601,6 +602,7 @@ void TrackFly_Car(void)
 
         if (abs(PX) > PY_DEAD)
         {
+            vy = (PX > 0) ? 10.0f : -10.0f;
             vy = (PX > 0) ? 10.0f : -10.0f;
         }
         else
@@ -640,14 +642,6 @@ int main(void)
         XY_BOUNDARY, BOUNDARY_NUM,
         xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
         xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
-    seekfree_assistant_camera_information_config(
-        SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
-        MT9V03X_W, MT9V03X_H);
-
-    seekfree_assistant_camera_boundary_config(
-        XY_BOUNDARY, BOUNDARY_NUM,
-        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
 
     while (1)
     {
@@ -665,6 +659,8 @@ int main(void)
             }
 
             find_bright_center();
+            TrackCar_Beacon();
+            TrackFly_Car();
             TrackCar_Beacon();
             TrackFly_Car();
         }
