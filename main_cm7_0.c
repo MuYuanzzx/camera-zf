@@ -158,8 +158,9 @@ void UpdateBeaconPos(int16_t x, int16_t y)
 
     bright_center_x = x;
     bright_center_y = y;
-    PY = -(bright_center_y - CenterY);
-    PX = bright_center_x - CenterX;
+    
+    PY = -(bright_center_y - beacon_cy);
+    PX = bright_center_x -  beacon_cx ;
 }
 
 void find_all_blobs(void)
@@ -319,12 +320,11 @@ void find_bright_center(void)
     int16_t minx = bar_blob.minx, maxx = bar_blob.maxx;
     int16_t miny = bar_blob.miny, maxy = bar_blob.maxy;
 
-    UpdateBeaconPos(cx, cy);
-
+    
     // ===================== 修复1：完善端点检测逻辑 =====================
     float top_max_dist_sq = -1.0f;
     float bottom_max_dist_sq = -1.0f;
-
+    
     // 1. 优先尝试垂直方向寻找端点
     for (int y = miny; y <= maxy; y++)
     {
@@ -354,7 +354,7 @@ void find_bright_center(void)
             }
         }
     }
-
+    
     direct_dx = dir_top_x - dir_bottom_x;
     no_car_led = 0;
     if (dir_top_x == -1 || dir_bottom_x == -1)
@@ -364,50 +364,47 @@ void find_bright_center(void)
     // 2. 如果垂直方向没找到（如水平灯），则找水平方向最左/最右点
     // if (dir_top_x == -1 || dir_bottom_x == -1)
     // {
-    //     int16_t left_x = cx, left_y = cy;
-    //     int16_t right_x = cx, right_y = cy;
-    //     int16_t min_x_val = MT9V03X_W, max_x_val = 0;
+        //     int16_t left_x = cx, left_y = cy;
+        //     int16_t right_x = cx, right_y = cy;
+        //     int16_t min_x_val = MT9V03X_W, max_x_val = 0;
+        
+        //     for (int y = miny; y <= maxy; y++)
+        //     {
+            //         for (int x = minx; x <= maxx; x++)
+            //         {
+                //             if (image_copy[y][x] > BIN_THRESH)
+                //             {
+                    //                 if (x < min_x_val)
+                    //                 {
+                        //                     min_x_val = x;
+                        //                     left_x = x;
+                        //                     left_y = y;
+                        //                 }
+                        //                 if (x > max_x_val)
+                        //                 {
+                            //                     max_x_val = x;
+                            //                     right_x = x;
+                            //                     right_y = y;
+                            //                 }
+                            //             }
+                            //         }
+                            //     }
+                            //     dir_top_x = left_x;
+                            //     dir_top_y = left_y;
+                            //     dir_bottom_x = right_x;
+                            //     dir_bottom_y = right_y;
+                            // }
+                            // =========================================================================
+                            
 
-    //     for (int y = miny; y <= maxy; y++)
-    //     {
-    //         for (int x = minx; x <= maxx; x++)
-    //         {
-    //             if (image_copy[y][x] > BIN_THRESH)
-    //             {
-    //                 if (x < min_x_val)
-    //                 {
-    //                     min_x_val = x;
-    //                     left_x = x;
-    //                     left_y = y;
-    //                 }
-    //                 if (x > max_x_val)
-    //                 {
-    //                     max_x_val = x;
-    //                     right_x = x;
-    //                     right_y = y;
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     dir_top_x = left_x;
-    //     dir_top_y = left_y;
-    //     dir_bottom_x = right_x;
-    //     dir_bottom_y = right_y;
-    // }
-    // =========================================================================
-
-    if (dir_top_x != -1 && dir_bottom_x != -1)
-    {
-        dir_led_angle = calculate_vertical_angle(dir_top_x, dir_top_y, dir_bottom_x, dir_bottom_y);
-    }
-
-    {
-        for (int8_t dy = -1; dy <= 1; dy++)
-        {
-            for (int8_t dx = -1; dx <= 1; dx++)
-            {
-                int16_t x = cx + dx, y = cy + dy;
-                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_yel < BOUNDARY_NUM)
+                            
+                            {
+                                for (int8_t dy = -1; dy <= 1; dy++)
+                                {
+                                    for (int8_t dx = -1; dx <= 1; dx++)
+                                    {
+                                        int16_t x = cx + dx, y = cy + dy;
+                                        if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_yel < BOUNDARY_NUM)
                 {
                     xy_x3_boundary[cnt_yel] = x;
                     xy_y3_boundary[cnt_yel] = y;
@@ -506,7 +503,7 @@ void find_bright_center(void)
             }
         }
     }
-
+    
     // 从圆形信标灯中选出最亮的（飞控追踪目标）
     // 如果有多个亮度接近的（最高亮度的90%以上），选最接近图像中心的
     is_fly_beacon_detected = 0;
@@ -515,26 +512,26 @@ void find_bright_center(void)
     {
         int16_t fly_choice_idx = -1;
         uint32_t max_sum_pixel = 0;
-
+        
         // 第一轮：找最大亮度
         for (int i = 0; i < blob_cnt; i++)
         {
             if (i == bar_idx)
-                continue;
+            continue;
             if (blobs[i].sum_pixel > max_sum_pixel)
-                max_sum_pixel = blobs[i].sum_pixel;
+            max_sum_pixel = blobs[i].sum_pixel;
         }
-
+        
         if (max_sum_pixel > 0)
         {
             uint32_t brightness_thresh = (max_sum_pixel * 90) / 100; // 最高亮度的90%
             uint32_t min_dist_sq = (uint32_t)-1;
-
+            
             // 第二轮：在亮度 >= threshold 的 blob 中选最近图像中心的
             for (int i = 0; i < blob_cnt; i++)
             {
                 if (i == bar_idx)
-                    continue;
+                continue;
                 if (blobs[i].sum_pixel >= brightness_thresh)
                 {
                     int16_t dx_fly = blobs[i].cx - CenterX;
@@ -548,7 +545,7 @@ void find_bright_center(void)
                 }
             }
         }
-
+        
         if (fly_choice_idx >= 0)
         {
             is_fly_beacon_detected = 1;
@@ -557,8 +554,10 @@ void find_bright_center(void)
             beacon_PX = beacon_cx - CenterX;    // 右为正
             beacon_PY = -(beacon_cy - CenterY); // 上为正
         }
+        
+        UpdateBeaconPos(cx, cy);
     }
-
+    
     for (int i = 0; i < blob_cnt; i++)
     {
         if (i == bar_idx)
@@ -596,7 +595,7 @@ int TrackCar_FollowFly(void)
     {
         vx = 0;
         vy = 0;
-        vw = (int16_t)(7.0f * fabs(direct_dx) + 50.0f);
+        vw = (int16_t)(4.0f * fabs(direct_dx) + 5.0f);
         vw = (direct_dx > 0) ? -vw : vw;
     }
     else
@@ -604,13 +603,13 @@ int TrackCar_FollowFly(void)
         vw = 0;
         if (abs(PY) > PY_DEAD)
         {
-            vx = (int16_t)(3.4f * fabs(PY) + 35.0f);
+            vx = (int16_t)(0.5f * fabs(PY) + 20.0f);
             vx = (PY > 0) ? -vx : vx;
         }
-        if (abs(PX - (32)) > PY_DEAD)
+        if (abs(PX) > PY_DEAD)
         {
-            vy = (int16_t)(3.4f * fabs(PX - (32)) + 35.0f);
-            vy = (PX - (32) > 0) ? -vy : vy;
+            vy = (int16_t)(0.5f * fabs(PX) + 20.0f);
+            vy = (PX > 0) ? -vy : vy;
         }
     }
 
