@@ -677,7 +677,7 @@ int main(void)
             //seekfree_assistant_camera_send();        // 再发送图像+当前帧的边界数据到上位机
             //TrackFly_Beacon();
             TrackCar_FollowFly();
-           // printf("信标灯数量： %d\n",beacon_count);
+           printf("信标灯数量： %d\n",beacon_count);
         }
         system_delay_ms(1);
     }
