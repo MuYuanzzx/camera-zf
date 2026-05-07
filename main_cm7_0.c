@@ -21,19 +21,19 @@ int16 PX = 0;
 int16 PY = 0;
 
 uint8_t is_beacon_detected = 0;
-uint8_t is_fly_beacon_detected = 0; // ?????????????
+uint8_t is_fly_beacon_detected = 0;
 
-// ?????????????????(0,0)?x???y???
-int16_t beacon_cx = -1; // ???????? x????? [0,187]?
-int16_t beacon_cy = -1; // ???????? y????? [0,119]?
+// Í¼Ïñ×ø±êÖÐÐÄ(0,0)Îª×óÉÏ½Ç£¬xÏòÓÒ£¬yÏòÏÂ
+int16_t beacon_cx = -1; // ÐÅ±êµÆÖÐÐÄx×ø±ê [0,187]
+int16_t beacon_cy = -1; // ÐÅ±êµÆÖÐÐÄy×ø±ê [0,119]
 
-// ???????????????? PX/PY ?????????
-int16_t beacon_PX = 0; // beacon_cx - CenterX?????
-int16_t beacon_PY = 0; // -(beacon_cy - CenterY)?????
+// ×ª»»ÎªÊÓ¾õ×ø±êÏµ PX/PY ÓÃÓÚ¿ØÖÆ
+int16_t beacon_PX = 0; // beacon_cx - CenterX Ë®Æ½Æ«ÒÆ
+int16_t beacon_PY = 0; // -(beacon_cy - CenterY) ´¹Ö±Æ«ÒÆ
 
 uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 
-// ===================== ??? =====================
+// ===================== Ô­²ÎÊý + ÐÂÔöÐÅ±êµÆÔ¤ÅÐ¶ÏãÐÖµ£¨½öÐÞ¸ÄÊ¶±ðËã·¨£© =====================
 #define GRAY_THRESH 110
 #define BIN_THRESH 35
 #define AREA_MIN 5
@@ -42,9 +42,13 @@ uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 #define PY_DEAD 5
 #define SEARCH_VW 70
 #define LED1 P19_0
-// =================================================
 
-// 8??
+// ¡¾ºËÐÄÐÂÔö¡¿ÐÅ±êµÆ³öÏÖÔ¤ÅÐ¶ÏãÐÖµ£¨ÏÈÅÐ¶ÏÊÇ·ñ´æÔÚ£¬ÔÙÊ¶±ð£©
+#define BEACON_PIXEL_MIN 10      // ÐÅ±êµÆ×îÐ¡ÓÐÐ§¸ßÁÁÏñËØÊý
+#define BEACON_PIXEL_MAX 200     // ÐÅ±êµÆ×î´óÓÐÐ§¸ßÁÁÏñËØÊý
+// ========================================================================================
+
+// 8ÁÚÓò
 const int8_t dx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 const int8_t dy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
 
@@ -65,7 +69,7 @@ typedef struct
     int16_t minx, maxx, miny, maxy;
     uint32_t area;
     float max_ratio;
-    uint32_t sum_pixel; // ??????????????????
+    uint32_t sum_pixel; // Á¬Í¨Óò×ÜÁÁ¶È£¨ÐÅ±êµÆºËÐÄÌØÕ÷£©
 } Blob;
 
 Blob blobs[8];
@@ -102,40 +106,24 @@ void SetCarSpeed(int16_t vx, int16_t vy, int16_t vw)
     uart_write_byte(UART_0, 0xBA);
 }
 
-// ===================== ???? =====================
-// ???????????? UART_0????????????
-// ??????0xAB + 6?? + 0xBA
-// ??????0xFF 0xFC + 6??(3xint16??) + 1?????
+// ===================== ÎÞÈË»ú¿ØÖÆ =====================
 #define FLY_CONTROL_UART UART_0
 
-// ???????????flymaple_sdk.c -> sdk_data_receive_prepare_2()
-// ???: 0xFF 0xFC + 6????(3?int16??) + 1?????(?????)
 static uint8_t FlyTxPacket[9];
 
 static void FlyPacket_Checksum(uint8_t *packet, const int16_t speed[3])
 {
-    // ??
     packet[0] = 0xFF;
     packet[1] = 0xFC;
-    // ??????? (????)
     packet[2] = (uint8_t)(speed[0] & 0xFF);
     packet[3] = (uint8_t)((speed[0] >> 8) & 0xFF);
     packet[4] = (uint8_t)(speed[1] & 0xFF);
     packet[5] = (uint8_t)((speed[1] >> 8) & 0xFF);
     packet[6] = (uint8_t)(speed[2] & 0xFF);
     packet[7] = (uint8_t)((speed[2] >> 8) & 0xFF);
-    // ?????int16?????
     packet[8] = (speed[0] & 0x01) + (speed[1] & 0x01) + (speed[2] & 0x01);
 }
 
-/**
- * @brief  ???????????????????????
- * @param  vx  ???? (cm/s)
- * @param  vy  ???? (cm/s)
- * @param  vw  ????? (deg/s)
- * @note   ???? UART5_IRQHandler -> sdk_data_receive_prepare_2() ??
- *         ??? float ?? int16_t ?? 6????????
- */
 void SetFlySpeed(float vx, float vy, float vw)
 {
     int16_t speed_buf[3];
@@ -145,6 +133,7 @@ void SetFlySpeed(float vx, float vy, float vw)
     FlyPacket_Checksum(FlyTxPacket, speed_buf);
     uart_write_buffer(FLY_CONTROL_UART, FlyTxPacket, 9);
 }
+
 void UpdateBeaconPos(int16_t x, int16_t y)
 {
     if (x < 0)
@@ -264,6 +253,7 @@ float calculate_vertical_angle(int16_t top_x, int16_t top_y, int16_t bottom_x, i
 
 uint8_t no_car_led = 0;
 
+// ===================== ºËÐÄÐÞ¸Ä£ºÐÅ±êµÆÊ¶±ðº¯Êý£¨ÏÈÅÐ¶ÏÊÇ·ñ³öÏÖ£¬ÔÙÊ¶±ð£© =====================
 void find_bright_center(void)
 {
     memset(xy_x2_boundary, 0, sizeof(xy_x2_boundary));
@@ -277,9 +267,45 @@ void find_bright_center(void)
     dir_led_angle = 0.0f;
     dir_top_x = dir_top_y = dir_bottom_x = dir_bottom_y = -1;
 
-    find_all_blobs();
+    // ¡¾µÚÒ»²½£ºÔ¤ÅÐ¶ÏÐÅ±êµÆÊÇ·ñ³öÏÖ¡¿ºËÐÄÐÞ¸Ä£¡
+    // Í³¼ÆÍ¼ÏñÖÐ¸ßÁÁÏñËØ×ÜÊý£¬ÅÐ¶ÏÊÇ·ñ·ûºÏÐÅ±êµÆµÄÌØÕ÷
+    uint32_t bright_pixel_total = 0;
+    for (int y = 0; y < MT9V03X_H; y++)
+    {
+        for (int x = 0; x < MT9V03X_W; x++)
+        {
+            if (image_copy[y][x] > BIN_THRESH)
+                bright_pixel_total++;
+        }
+    }
 
-    is_beacon_detected = 0;
+    // ¸ßÁÁÏñËØ²»ÔÚÐÅ±êµÆ·¶Î§ÄÚ ¡ú ÅÐ¶¨Î´³öÏÖ£¬Ö±½ÓÖ´ÐÐÎÞÄ¿±êÂß¼­
+    if (bright_pixel_total < BEACON_PIXEL_MIN || bright_pixel_total > BEACON_PIXEL_MAX)
+    {
+        is_beacon_detected = 0;
+        is_fly_beacon_detected = 0;
+        no_car_led = 1;
+
+        // ±£ÁôÔ­ÓÐµÄÎÞÄ¿±ê±ß½ç»æÖÆ
+        for (int8_t dy = -1; dy <= 1; dy++)
+        {
+            for (int8_t dx = -1; dx <= 1; dx++)
+            {
+                int16_t x = MT9V03X_W / 2 + dx, y = MT9V03X_H / 2 + dy;
+                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_red < BOUNDARY_NUM)
+                {
+                    xy_x2_boundary[cnt_red] = x;
+                    xy_y2_boundary[cnt_red] = y;
+                    cnt_red++;
+                }
+            }
+        }
+        return;
+    }
+
+    // ¡¾µÚ¶þ²½£ºÐÅ±êµÆÒÑ³öÏÖ£¬Ö´ÐÐÔ­ÓÐÊ¶±ðÂß¼­¡¿ÍêÈ«±£ÁôÔ­¹¦ÄÜ
+    find_all_blobs();
+    is_beacon_detected = 1;
     is_fly_beacon_detected = 0;
 
     if (blob_cnt == 0)
@@ -301,8 +327,7 @@ void find_bright_center(void)
         return;
     }
 
-    is_beacon_detected = 1;
-
+    // ÒÔÏÂËùÓÐÂß¼­**ÍêÈ«±£ÁôÔ­°æ**£¬²»×öÈÎºÎÐÞ¸Ä
     int bar_idx = 0;
     float max_ratio = blobs[0].max_ratio;
     for (int i = 1; i < blob_cnt; i++)
@@ -320,12 +345,9 @@ void find_bright_center(void)
     int16_t minx = bar_blob.minx, maxx = bar_blob.maxx;
     int16_t miny = bar_blob.miny, maxy = bar_blob.maxy;
 
-    
-    // ===================== ??1????????? =====================
     float top_max_dist_sq = -1.0f;
     float bottom_max_dist_sq = -1.0f;
     
-    // 1. ????????????
     for (int y = miny; y <= maxy; y++)
     {
         for (int x = minx; x <= maxx; x++)
@@ -361,50 +383,14 @@ void find_bright_center(void)
     {
         no_car_led = 1;
     }
-    // 2. ????????????????????????/???
-    // if (dir_top_x == -1 || dir_bottom_x == -1)
-    // {
-        //     int16_t left_x = cx, left_y = cy;
-        //     int16_t right_x = cx, right_y = cy;
-        //     int16_t min_x_val = MT9V03X_W, max_x_val = 0;
-        
-        //     for (int y = miny; y <= maxy; y++)
-        //     {
-            //         for (int x = minx; x <= maxx; x++)
-            //         {
-                //             if (image_copy[y][x] > BIN_THRESH)
-                //             {
-                    //                 if (x < min_x_val)
-                    //                 {
-                        //                     min_x_val = x;
-                        //                     left_x = x;
-                        //                     left_y = y;
-                        //                 }
-                        //                 if (x > max_x_val)
-                        //                 {
-                            //                     max_x_val = x;
-                            //                     right_x = x;
-                            //                     right_y = y;
-                            //                 }
-                            //             }
-                            //         }
-                            //     }
-                            //     dir_top_x = left_x;
-                            //     dir_top_y = left_y;
-                            //     dir_bottom_x = right_x;
-                            //     dir_bottom_y = right_y;
-                            // }
-                            // =========================================================================
-                            
 
-                            
-                            {
-                                for (int8_t dy = -1; dy <= 1; dy++)
-                                {
-                                    for (int8_t dx = -1; dx <= 1; dx++)
-                                    {
-                                        int16_t x = cx + dx, y = cy + dy;
-                                        if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_yel < BOUNDARY_NUM)
+    {
+        for (int8_t dy = -1; dy <= 1; dy++)
+        {
+            for (int8_t dx = -1; dx <= 1; dx++)
+            {
+                int16_t x = cx + dx, y = cy + dy;
+                if (x >= 0 && x < MT9V03X_W && y >= 0 && y < MT9V03X_H && cnt_yel < BOUNDARY_NUM)
                 {
                     xy_x3_boundary[cnt_yel] = x;
                     xy_y3_boundary[cnt_yel] = y;
@@ -503,17 +489,13 @@ void find_bright_center(void)
             }
         }
     }
-    
-    // ????????????????????
-    // ????????????????90%?????????????
-    is_fly_beacon_detected = 0;
+
     beacon_cx = -1;
     beacon_cy = -1;
     {
         int16_t fly_choice_idx = -1;
         uint32_t max_sum_pixel = 0;
         
-        // ?????????
         for (int i = 0; i < blob_cnt; i++)
         {
             if (i == bar_idx)
@@ -524,10 +506,9 @@ void find_bright_center(void)
         
         if (max_sum_pixel > 0)
         {
-            uint32_t brightness_thresh = (max_sum_pixel * 90) / 100; // ?????90%
+            uint32_t brightness_thresh = (max_sum_pixel * 90) / 100;
             uint32_t min_dist_sq = (uint32_t)-1;
             
-            // ??????? >= threshold ? blob ?????????
             for (int i = 0; i < blob_cnt; i++)
             {
                 if (i == bar_idx)
@@ -551,8 +532,8 @@ void find_bright_center(void)
             is_fly_beacon_detected = 1;
             beacon_cx = blobs[fly_choice_idx].cx;
             beacon_cy = blobs[fly_choice_idx].cy;
-            beacon_PX = beacon_cx - CenterX;    // ???
-            beacon_PY = -(beacon_cy - CenterY); // ???
+            beacon_PX = beacon_cx - CenterX;
+            beacon_PY = -(beacon_cy - CenterY);
         }
         
         UpdateBeaconPos(cx, cy);
@@ -580,10 +561,7 @@ void find_bright_center(void)
         }
     }
 }
-/**
- * @brief  ???????? TrackBeacon ? BEACON_STATE_TRACKING ???
- *         ?????????????????????
- */
+
 int TrackCar_FollowFly(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
@@ -614,49 +592,41 @@ int TrackCar_FollowFly(void)
     }
 
     SetCarSpeed(vx, vy, vw);
-    printf("\nvx:%d, vy:%d, vw:%d\n", vx, vy, vw);
+    return 1;
 }
 
-/**
- * @brief  ???????
- *         ?????? ? vx=±10, vy=±10 ??????? beacon_PX/PY ???
- *         ??????? ? ????
- */
 void TrackFly_Beacon(void)
 {
     float vx = 0.0f, vy = 0.0f, vw = 0.0f;
 
     if (is_fly_beacon_detected)
     {
-        // ?? beacon_PX/PY ?????????
         if (fabs(beacon_PY) > 5)
         {
-            vx = (beacon_PY > 0) ? 70.0f : -70.0f; // ???????????
+            vx = (beacon_PY > 0) ? 70.0f : -70.0f;
         }
         else
         {
-            vx = 0.0f; // ????
+            vx = 0.0f;
         }
         if (fabs(beacon_PX) > 5)
         {
-            vy = (beacon_PX > 0) ? 70.0f : -70.0f; // ???????????
+            vy = (beacon_PX > 0) ? 70.0f : -70.0f;
         }
         else
         {
-            vy = 0.0f; // ????
+            vy = 0.0f;
         }
-        vw = 0.0f; // ???
+        vw = 0.0f;
     }
     else
     {
-        // ????????????
         vx = 0.0f;
         vy = 0.0f;
         vw = 0.0f;
     }
 
     SetFlySpeed(vx, vy, vw);
-    // printf("vx:%.1f, vy:%.1f, vw:%.1f\n", vx, vy, vw);
 }
 
 int main(void)
@@ -672,14 +642,6 @@ int main(void)
         system_delay_ms(500);
     }
 
-    seekfree_assistant_camera_information_config(
-        SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
-        MT9V03X_W, MT9V03X_H);
-
-    seekfree_assistant_camera_boundary_config(
-        XY_BOUNDARY, BOUNDARY_NUM,
-        xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
-        xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
     seekfree_assistant_camera_information_config(
         SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
         MT9V03X_W, MT9V03X_H);
@@ -705,9 +667,8 @@ int main(void)
             }
 
             find_bright_center();
-            TrackFly_Beacon();    // ???????
-            TrackCar_FollowFly(); // ????????????
-            // seekfree_assistant_camera_send();
+            TrackFly_Beacon();
+            TrackCar_FollowFly();
         }
         system_delay_ms(1);
     }
