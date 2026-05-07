@@ -22,6 +22,7 @@ int16 PY = 0;
 
 uint8_t is_beacon_detected = 0;
 uint8_t is_fly_beacon_detected = 0;
+uint8_t beacon_count = 0;  // 信标灯数量标志位，范围0~2
 
 // 图像坐标中心(0,0)为左上角，x向右，y向下
 int16_t beacon_cx = -1; // 信标灯中心x坐标 [0,187]
@@ -285,6 +286,7 @@ void find_bright_center(void)
         is_beacon_detected = 0;
         is_fly_beacon_detected = 0;
         no_car_led = 1;
+        beacon_count = 0;
 
         // 保留原有的无目标边界绘制
         for (int8_t dy = -1; dy <= 1; dy++)
@@ -311,6 +313,7 @@ void find_bright_center(void)
     if (blob_cnt == 0)
     {
         no_car_led = 1;
+        beacon_count = 0;
         for (int8_t dy = -1; dy <= 1; dy++)
         {
             for (int8_t dx = -1; dx <= 1; dx++)
@@ -326,7 +329,7 @@ void find_bright_center(void)
         }
         return;
     }
-
+    //printf("是否检测到信标灯：%d ",is_beacon_detected);
     // 以下所有逻辑**完全保留原版**，不做任何修改
     int bar_idx = 0;
     float max_ratio = blobs[0].max_ratio;
@@ -339,6 +342,10 @@ void find_bright_center(void)
         }
     }
 
+    // 计算信标灯数量（总连通域数减去方向指示灯），范围限制在0~2
+    int16_t raw_count = blob_cnt - 1;
+    beacon_count = (raw_count < 0) ? 0 : ((raw_count > 2) ? 2 : (uint8_t)raw_count);
+     
     Blob bar_blob = blobs[bar_idx];
     int16_t cx = bar_blob.cx;
     int16_t cy = bar_blob.cy;
@@ -565,9 +572,9 @@ void find_bright_center(void)
 int TrackCar_FollowFly(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
-    if (no_car_led == 1)
+    if (no_car_led == 1 || beacon_count == 0)
     {
-        return 0;
+        vx = 0, vy = 0, vw = 0;
     }
     if (abs(direct_dx) > 6)
     {
@@ -592,6 +599,7 @@ int TrackCar_FollowFly(void)
     }
 
     SetCarSpeed(vx, vy, vw);
+    printf("vx:%d,vy:%d,vw:%d",vx,vy,vw);
     return 1;
 }
 
@@ -665,10 +673,11 @@ int main(void)
                     image_copy[y][x] = (pix < GRAY_THRESH) ? 0 : pix;
                 }
             }
-
-            find_bright_center();
-            TrackFly_Beacon();
+            find_bright_center();                    // 先解算当前帧的方向指示灯特征点、位置、方向
+            //seekfree_assistant_camera_send();        // 再发送图像+当前帧的边界数据到上位机
+            //TrackFly_Beacon();
             TrackCar_FollowFly();
+           // printf("信标灯数量： %d\n",beacon_count);
         }
         system_delay_ms(1);
     }
