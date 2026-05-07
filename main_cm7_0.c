@@ -648,20 +648,22 @@ void TrackFly_Beacon(void)
         int16_t offset_x = bar_cx - CenterX;  // 水平偏移(正=偏右)
         int16_t offset_y = bar_cy - CenterY;  // 垂直偏移(正=偏下)
 
-        // 左右平移 (vy)：方向灯偏右则右移，偏左则左移
+    // 左右平移 (vy)：方向灯偏右则右移，偏左则左移（使用比例+常数算法，同小车部分）
         if (abs(offset_x) > PX_DEAD1)
         {
-            vy = (offset_x > 0) ? 10.0f : -10.0f;
+            vy = 0.5f * fabs(offset_x) + 20.0f;
+            vy = (offset_x > 0) ? vy : -vy;
         }
         else
         {
             vy = 0.0f;
         }
 
-        // 前后平移 (vx)：方向灯偏下(离得近)则后退，偏上(离得远)则前进
+        // 前后平移 (vx)：方向灯偏下(离得近)则后退，偏上(离得远)则前进（使用比例+常数算法，同小车部分）
         if (abs(offset_y) > PY_DEAD)
         {
-            vx = (offset_y > 0) ? -10.0f : 10.0f;
+            vx = 0.5f * fabs(offset_y) + 20.0f;
+            vx = (offset_y > 0) ? -vx : vx;
         }
         else
         {
@@ -678,6 +680,14 @@ void TrackFly_Beacon(void)
         vy = 0.0f;
         vw = 0.0f;
     }
+
+    // 限幅，确保VX、VY、VW不超出±60
+    if (vx > 60.0f) vx = 60.0f;
+    if (vx < -60.0f) vx = -60.0f;
+    if (vy > 60.0f) vy = 60.0f;
+    if (vy < -60.0f) vy = -60.0f;
+    if (vw > 60.0f) vw = 60.0f;
+    if (vw < -60.0f) vw = -60.0f;
 
     SetFlySpeed(vx, vy, vw);
     printf("无人机控制指令 - vx: %.1f, vy: %.1f, vw: %.1f\n", vx, vy, vw);
@@ -723,7 +733,7 @@ int main(void)
             // seekfree_assistant_camera_send();        // 再发送图像+当前帧的边界数据到上位机
             TrackFly_Beacon();                        // 无人机追小车灯平移
             // TrackCar_FollowFly();
-           // printf("信标灯数量： %d\n",beacon_count);
+           printf("信标灯数量： %d\n",beacon_count);
         }
         system_delay_ms(1);
     }
