@@ -20,6 +20,10 @@ uint8_t xy_y1_boundary[BOUNDARY_NUM], xy_y2_boundary[BOUNDARY_NUM], xy_y3_bounda
 int16 PX = 0;
 int16 PY = 0;
 
+// 小车长条方向灯中心坐标
+int16_t bar_cx = MT9V03X_W / 2;
+int16_t bar_cy = MT9V03X_H / 2;
+
 uint8_t is_beacon_detected = 0;
 uint8_t is_fly_beacon_detected = 0;
 uint8_t beacon_count = 0;  // 信标灯数量标志位，范围0~2
@@ -349,6 +353,9 @@ void find_bright_center(void)
     Blob bar_blob = blobs[bar_idx];
     int16_t cx = bar_blob.cx;
     int16_t cy = bar_blob.cy;
+    // 更新小车长条方向灯中心坐标
+    bar_cx = cx;
+    bar_cy = cy;
     int16_t minx = bar_blob.minx, maxx = bar_blob.maxx;
     int16_t miny = bar_blob.miny, maxy = bar_blob.maxy;
 
@@ -633,26 +640,38 @@ void TrackFly_Beacon(void)
 {
     float vx = 0.0f, vy = 0.0f, vw = 0.0f;
 
-    if (is_fly_beacon_detected)
+    // 当检测到小车灯时，无人机追着长条方向灯跑，使其保持在画面中心
+    if (is_beacon_detected && no_car_led == 0)
     {
-        if (fabs(beacon_PY) > 5)
+        // 计算长条方向灯相对于图像中心的偏移量
+        // 图像坐标系：x向右为正，y向下为正
+        int16_t offset_x = bar_cx - CenterX;  // 水平偏移(正=偏右)
+        int16_t offset_y = bar_cy - CenterY;  // 垂直偏移(正=偏下)
+
+        // 左右平移 (vy)：方向灯偏右则右移，偏左则左移
+        if (abs(offset_x) > PX_DEAD1)
         {
-            vx = (beacon_PY > 0) ? 70.0f : -70.0f;
-        }
-        else
-        {
-            vx = 0.0f;
-        }
-        if (fabs(beacon_PX) > 5)
-        {
-            vy = (beacon_PX > 0) ? 70.0f : -70.0f;
+            vy = (offset_x > 0) ? 10.0f : -10.0f;
         }
         else
         {
             vy = 0.0f;
         }
+
+        // 前后平移 (vx)：方向灯偏下(离得近)则后退，偏上(离得远)则前进
+        if (abs(offset_y) > PY_DEAD)
+        {
+            vx = (offset_y > 0) ? -10.0f : 10.0f;
+        }
+        else
+        {
+            vx = 0.0f;
+        }
+
+        // 无人机不旋转
         vw = 0.0f;
     }
+    // 其他情况下无人机静止
     else
     {
         vx = 0.0f;
@@ -661,6 +680,7 @@ void TrackFly_Beacon(void)
     }
 
     SetFlySpeed(vx, vy, vw);
+    printf("无人机控制指令 - vx: %.1f, vy: %.1f, vw: %.1f\n", vx, vy, vw);
 }
 
 int main(void)
@@ -700,9 +720,9 @@ int main(void)
                 }
             }
             find_bright_center();                    // 先解算当前帧的方向指示灯特征点、位置、方向
-            // seekfree_assistant_camera_send();        // 1再发送图像+当前帧的边界数据到上位机
-            //TrackFly_Beacon();
-            TrackCar_FollowFly();
+            // seekfree_assistant_camera_send();        // 再发送图像+当前帧的边界数据到上位机
+            TrackFly_Beacon();                        // 无人机追小车灯平移
+            // TrackCar_FollowFly();
            // printf("信标灯数量： %d\n",beacon_count);
         }
         system_delay_ms(1);
