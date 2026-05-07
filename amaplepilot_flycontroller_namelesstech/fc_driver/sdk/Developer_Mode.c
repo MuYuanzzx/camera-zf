@@ -332,7 +332,7 @@ void Auto_Flight_Ctrl(int16_t *mode)
       {
         altitude_time++;
       }
-      if (altitude_time >= OneSecond * 4) // 当高度达到85cm并维持1s后，进入下一个状态
+      if (altitude_time >= OneSecond * 4) // 当高度达到50cm并维持1s后，进入下一个状态
       {
         MyState = 1;
         StateTime = 0; // 切换状态时，重置状态保持时间
@@ -347,13 +347,12 @@ void Auto_Flight_Ctrl(int16_t *mode)
       SpeedT[1] = SpeedPacket[1] / 100.0f;
       SpeedT[2] = SpeedPacket[2] / 100.0f;
       SetFlyCar(SpeedT[0], SpeedT[1], SpeedT[2]); // CYT4控制
-      printf("SpeedT[0]: %.4f, SpeedT[1]: %.4f, SpeedT[2]: %.4f\n", SpeedT[0], SpeedT[1], SpeedT[2]);
       if ((fabs(SpeedT[0] - 0.00) <= 0.05) && (fabs(SpeedT[1] - 0.00) <= 0.05))
       {
         indoor_position_control(0); // 原地定点
       }
 
-      if (StateTime >= OneSecond * 5) // 维持5s后，进入下一个状态
+      if (StateTime >= OneSecond * 20) // 维持20s后，进入下一个状态
       {
         MyState = 2;
         StateTime = 0; // 切换状态时，重置状态保持时间
