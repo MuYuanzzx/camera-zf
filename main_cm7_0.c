@@ -572,10 +572,36 @@ void find_bright_center(void)
 int TrackCar_FollowFly(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
-    if (no_car_led == 1 || beacon_count == 0)
+
+    // 情况3：未检测到小车灯 → 静止
+    if (no_car_led == 1)
     {
-        vx = 0, vy = 0, vw = 0;
+        vx=0;
+        vy=0;
+        vw=0;
+        SetCarSpeed(0, 0, 0);
+        return 0;
     }
+
+    // 情况1：只检测到小车灯，未检测到信标灯 → 仅发送旋转指令
+    if (beacon_count == 0)
+    {
+        if (abs(direct_dx) > 6)
+        {
+            vw = (int16_t)(4.0f * fabs(direct_dx) + 5.0f);
+            vw = (direct_dx > 0) ? -vw : vw;
+            vx=0;
+            vy=0;
+        }
+        else
+        {
+            vw = 0;
+        }
+        SetCarSpeed(0, 0, vw);
+        return 1;
+    }
+
+    // 情况2：同时检测到小车灯和信标灯 → 发送旋转和平移指令
     if (abs(direct_dx) > 6)
     {
         vx = 0;
@@ -597,9 +623,9 @@ int TrackCar_FollowFly(void)
             vy = (PX > 0) ? -vy : vy;
         }
     }
-
+    
     SetCarSpeed(vx, vy, vw);
-    printf("vx:%d,vy:%d,vw:%d",vx,vy,vw);
+    //printf("vx:%d,vy:%d,vw:%d",vx,vy,vw);
     return 1;
 }
 
@@ -674,10 +700,10 @@ int main(void)
                 }
             }
             find_bright_center();                    // 先解算当前帧的方向指示灯特征点、位置、方向
-            //seekfree_assistant_camera_send();        // 再发送图像+当前帧的边界数据到上位机
+            // seekfree_assistant_camera_send();        // 1再发送图像+当前帧的边界数据到上位机
             //TrackFly_Beacon();
             TrackCar_FollowFly();
-           printf("信标灯数量： %d\n",beacon_count);
+           // printf("信标灯数量： %d\n",beacon_count);
         }
         system_delay_ms(1);
     }
