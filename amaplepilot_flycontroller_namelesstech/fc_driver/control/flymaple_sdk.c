@@ -361,12 +361,14 @@ void sdk_data_receive_prepare_2(uint8_t data)
   if (sdk_state_cnt == 0 && data == 0xFF) // 帧头1
   {
     sdk_state_cnt = 1;
+    printf("success:FF");
   }
   else if (sdk_state_cnt == 1 && data == 0xFC) // 帧头2
   {
     sdk_state_cnt = 2;
     sdk_data_len = 6;
     pRxPacket = 0;
+    printf("success:FC");
   }
   else if (sdk_state_cnt == 2) // 有多少数据长度，就存多少个
   {
@@ -384,6 +386,11 @@ void sdk_data_receive_prepare_2(uint8_t data)
       SpeedPacket[0] = TempSpeedPacket[0];
       SpeedPacket[1] = TempSpeedPacket[1];
       SpeedPacket[2] = TempSpeedPacket[2];
+
+      // ---- 收到正确数据后，通过UART5发送一个true（0x01表示true） ----
+      uint8_t true_byte = 0x01;
+      uart5_send_bytes(&true_byte, 1);
+      // ----
     }
     else
     {

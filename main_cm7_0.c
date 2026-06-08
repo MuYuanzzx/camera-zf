@@ -44,7 +44,7 @@ uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 #define AREA_MIN 5
 #define PX_DEAD1 30
 #define PX_DEAD2 4
-#define PY_DEAD 5
+#define PY_DEAD 30
 #define SEARCH_VW 70
 #define LED1 P19_0
 
@@ -638,31 +638,35 @@ int TrackCar_FollowFly(void)
 
 void TrackFly_Beacon(void)
 {
+  //printf("123");
     float vx = 0.0f, vy = 0.0f, vw = 0.0f;
-
+            int16_t offset_x = bar_cx - CenterX;  // 水平偏移(正=偏右)
+        int16_t offset_y = bar_cy - CenterY;  // 垂直偏移(正=偏下)
+        int16_t enhance = 40.0f;
+        float vy_enhance = (offset_x*offset_x)/((offset_x*offset_x)*(offset_y*offset_y));
+        float vx_enhance = (offset_y*offset_y)/((offset_x*offset_x)*(offset_y*offset_y));
     // 当检测到小车灯时，无人机追着长条方向灯跑，使其保持在画面中心
     if (is_beacon_detected && no_car_led == 0)
     {
         // 计算长条方向灯相对于图像中心的偏移量
         // 图像坐标系：x向右为正，y向下为正
-        int16_t offset_x = bar_cx - CenterX;  // 水平偏移(正=偏右)
-        int16_t offset_y = bar_cy - CenterY;  // 垂直偏移(正=偏下)
+
 
     // 左右平移 (vy)：方向灯偏右则右移，偏左则左移（使用比例+常数算法，同小车部分）
         if (abs(offset_x) > PX_DEAD1)
         {
-            vy = 0.5f * fabs(offset_x) + 20.0f;
+            vy = 1.5f * fabs(offset_x) + enhance*vy_enhance;
             vy = (offset_x > 0) ? vy : -vy;
         }
         else
         {
             vy = 0.0f;
         }
-
+        
         // 前后平移 (vx)：方向灯偏下(离得近)则后退，偏上(离得远)则前进（使用比例+常数算法，同小车部分）
         if (abs(offset_y) > PY_DEAD)
         {
-            vx = 0.5f * fabs(offset_y) + 20.0f;
+            vx = 1.5f * fabs(offset_y) + enhance*vx_enhance;
             vx = (offset_y > 0) ? -vx : vx;
         }
         else
@@ -682,30 +686,33 @@ void TrackFly_Beacon(void)
     }
 
     // 限幅，确保VX、VY、VW不超出±60
-    if (vx > 60.0f) vx = 60.0f;
-    if (vx < -60.0f) vx = -60.0f;
-    if (vy > 60.0f) vy = 60.0f;
-    if (vy < -60.0f) vy = -60.0f;
-    if (vw > 60.0f) vw = 60.0f;
-    if (vw < -60.0f) vw = -60.0f;
+    if (vx > 200.0f) vx = 200.0f;
+    if (vx < -200.0f) vx = -200.0f;
+    if (vy > 200.0f) vy = 200.0f;
+    if (vy < -200.0f) vy = -200.0f;
+    if (vw > 200.0f) vw = 200.0f;
+    if (vw < -200.0f) vw = -200.0f;
 
     SetFlySpeed(vx, vy, vw);
-    printf("无人机控制指令 - vx: %.1f, vy: %.1f, vw: %.1f\n", vx, vy, vw);
+    //printf("无人机控制指令 - vx: %.1f, vy: %.1f, vw: %.1f\n", vx, vy, vw);
+    printf("%f,%f,%f,%f\n", vx, vy, (float)offset_x, (float)offset_y);
 }
 
 int main(void)
 {
+ // printf("1");
     clock_init(SYSTEM_CLOCK_250M);
     debug_init();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_DEBUG_UART);
     gpio_init(LED1, GPO, GPIO_HIGH, GPO_PUSH_PULL);
-
+//printf("2");
     while (mt9v03x_init())
     {
+      //printf("3");
         gpio_toggle_level(LED1);
         system_delay_ms(500);
     }
-
+//printf("3");
     seekfree_assistant_camera_information_config(
         SEEKFREE_ASSISTANT_MT9V03X, image_copy[0],
         MT9V03X_W, MT9V03X_H);
@@ -714,9 +721,10 @@ int main(void)
         XY_BOUNDARY, BOUNDARY_NUM,
         xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
         xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
-
+     // printf("123");
     while (1)
-    {
+    {   
+      //printf("123");
         if (mt9v03x_finish_flag)
         {
             mt9v03x_finish_flag = 0;
@@ -730,10 +738,10 @@ int main(void)
                 }
             }
             find_bright_center();                    // 先解算当前帧的方向指示灯特征点、位置、方向
-            // seekfree_assistant_camera_send();        // 再发送图像+当前帧的边界数据到上位机
+           //seekfree_assistant_camera_send();        // 再发送图像+当前帧的边界数据到上位机
             TrackFly_Beacon();                        // 无人机追小车灯平移
             // TrackCar_FollowFly();
-           printf("信标灯数量： %d\n",beacon_count);
+           //printf("信标灯数量： %d\n",beacon_count);
         }
         system_delay_ms(1);
     }
