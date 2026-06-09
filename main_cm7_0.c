@@ -20,40 +20,150 @@ uint8_t xy_y1_boundary[BOUNDARY_NUM], xy_y2_boundary[BOUNDARY_NUM], xy_y3_bounda
 int16 PX = 0;
 int16 PY = 0;
 
-// Ğ¡³µ³¤Ìõ·½ÏòµÆÖĞĞÄ×ø±ê
+// å°è½¦é•¿æ¡æ–¹å‘ç¯ä¸­å¿ƒåæ ‡
 int16_t bar_cx = MT9V03X_W / 2;
 int16_t bar_cy = MT9V03X_H / 2;
 
 uint8_t is_beacon_detected = 0;
 uint8_t is_fly_beacon_detected = 0;
-uint8_t beacon_count = 0;  // ĞÅ±êµÆÊıÁ¿±êÖ¾Î»£¬·¶Î§0~2
+uint8_t beacon_count = 0;  // ä¿¡æ ‡ç¯æ•°é‡æ ‡å¿—ä½ï¼ŒèŒƒå›´0~2
 
-// Í¼Ïñ×ø±êÖĞĞÄ(0,0)Îª×óÉÏ½Ç£¬xÏòÓÒ£¬yÏòÏÂ
-int16_t beacon_cx = -1; // ĞÅ±êµÆÖĞĞÄx×ø±ê [0,187]
-int16_t beacon_cy = -1; // ĞÅ±êµÆÖĞĞÄy×ø±ê [0,119]
+// å›¾åƒåæ ‡ä¸­å¿ƒ(0,0)ä¸ºå·¦ä¸Šè§’ï¼Œxå‘å³ï¼Œyå‘ä¸‹
+int16_t beacon_cx = -1; // ä¿¡æ ‡ç¯ä¸­å¿ƒxåæ ‡ [0,187]
+int16_t beacon_cy = -1; // ä¿¡æ ‡ç¯ä¸­å¿ƒyåæ ‡ [0,119]
 
-// ×ª»»ÎªÊÓ¾õ×ø±êÏµ PX/PY ÓÃÓÚ¿ØÖÆ
-int16_t beacon_PX = 0; // beacon_cx - CenterX Ë®Æ½Æ«ÒÆ
-int16_t beacon_PY = 0; // -(beacon_cy - CenterY) ´¹Ö±Æ«ÒÆ
+// è½¬æ¢ä¸ºè§†è§‰åæ ‡ç³» PX/PY ç”¨äºæ§åˆ¶
+int16_t beacon_PX = 0; // beacon_cx - CenterX æ°´å¹³åç§»
+int16_t beacon_PY = 0; // -(beacon_cy - CenterY) å‚ç›´åç§»
 
 uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 
-// ===================== Ô­²ÎÊı + ĞÂÔöĞÅ±êµÆÔ¤ÅĞ¶ÏãĞÖµ£¨½öĞŞ¸ÄÊ¶±ğËã·¨£© =====================
+// ===================== åŸå‚æ•° + æ–°å¢ä¿¡æ ‡ç¯é¢„åˆ¤æ–­é˜ˆå€¼ï¼ˆä»…ä¿®æ”¹è¯†åˆ«ç®—æ³•ï¼‰ =====================
 #define GRAY_THRESH 110
 #define BIN_THRESH 35
 #define AREA_MIN 5
-#define PX_DEAD1 30
+#define PX_DEAD1 10
 #define PX_DEAD2 4
-#define PY_DEAD 30
+#define PY_DEAD 10
 #define SEARCH_VW 70
 #define LED1 P19_0
 
-// ¡¾ºËĞÄĞÂÔö¡¿ĞÅ±êµÆ³öÏÖÔ¤ÅĞ¶ÏãĞÖµ£¨ÏÈÅĞ¶ÏÊÇ·ñ´æÔÚ£¬ÔÙÊ¶±ğ£©
-#define BEACON_PIXEL_MIN 10      // ĞÅ±êµÆ×îĞ¡ÓĞĞ§¸ßÁÁÏñËØÊı
-#define BEACON_PIXEL_MAX 200     // ĞÅ±êµÆ×î´óÓĞĞ§¸ßÁÁÏñËØÊı
+// ã€æ ¸å¿ƒæ–°å¢ã€‘ä¿¡æ ‡ç¯å‡ºç°é¢„åˆ¤æ–­é˜ˆå€¼ï¼ˆå…ˆåˆ¤æ–­æ˜¯å¦å­˜åœ¨ï¼Œå†è¯†åˆ«ï¼‰
+#define BEACON_PIXEL_MIN 10      // ä¿¡æ ‡ç¯æœ€å°æœ‰æ•ˆé«˜äº®åƒç´ æ•°
+#define BEACON_PIXEL_MAX 200     // ä¿¡æ ‡ç¯æœ€å¤§æœ‰æ•ˆé«˜äº®åƒç´ æ•°
 // ========================================================================================
 
-// 8ÁÚÓò
+// ä½é€šæ»¤æ³¢ç³»æ•° (EMA), èŒƒå›´ 0.0~1.0, è¶Šå°è¶Šå¹³æ»‘
+#define FLY_EMA_ALPHA 0.20f
+
+// ===================== PID æ§åˆ¶å™¨å‚æ•° =====================
+// ç³»ç»Ÿ: offsetèŒƒå›´ Â±94x/Â±60yåƒç´ , è¾“å‡º Â±150, å‘¨æœŸ ~50-100Hz
+// åŸå§‹æ§åˆ¶å¾‹å‚è€ƒ: v = 1.5*|offset| + 60, deadzone=10px
+//
+// æ°´å¹³æ–¹å‘ offset_x -> vy æ§åˆ¶ (å·¦å³å¹³ç§»)
+#define PID_X_KP  2.5f     // P: offset=40â†’100, offset=60â†’150æ»¡å¹…
+#define PID_X_KI  0.05f    // I: 20å¸§Ã—10pxâ†’Iaccum=200â†’I=10, æ¶ˆé™¤ç¨³æ€è¯¯å·®
+#define PID_X_KD  0.8f     // D: Î”5px/fâ†’D=4, é¢„æµ‹é˜»å°¼æŠ‘åˆ¶é€Ÿåº¦æŠ–åŠ¨
+
+// å‚ç›´æ–¹å‘ offset_y -> vx æ§åˆ¶ (å‰åå¹³ç§»)
+#define PID_Y_KP  2.5f     // P: åŒæ°´å¹³
+#define PID_Y_KI  0.05f    // I: åŒæ°´å¹³
+#define PID_Y_KD  0.8f     // D: åŒæ°´å¹³
+
+#define PID_INTEGRAL_LIMIT  100.0f  // Ié™å¹…(é˜²windup), max_I = 0.05*100 = 5
+#define PID_OUTPUT_LIMIT    150.0f  // è¾“å‡ºé™å¹… Â±150
+#define PID_D_ALPHA         0.2f    // Dä½é€šæ»¤æ³¢Î±(0~1, 0.2å¼ºå¹³æ»‘æŠ‘åˆ¶é«˜é¢‘æŠ–)
+// ==========================================================
+
+typedef struct
+{
+    float Kp, Ki, Kd;
+    float setpoint;
+    float integral;
+    float prev_error;
+    float prev_derivative;  // å¾®åˆ†é¡¹å†å²å€¼(ç”¨äºä½é€šæ»¤æ³¢)
+    float integral_limit;
+    float output_limit;
+    float min_output;       // è¾“å‡ºæœ€å°ç»å¯¹å€¼(éé›¶æ—¶æŠ¬å‡è‡³è¯¥å€¼, 0åˆ™ç¦ç”¨)
+    float deadband;         // æ­»åŒºé˜ˆå€¼(|error|å°äºæ­¤å€¼è¾“å‡º0)
+} PID_Controller;
+
+// PID åˆå§‹åŒ–
+void PID_Init(PID_Controller *pid, float Kp, float Ki, float Kd,
+              float setpoint, float integral_limit, float output_limit,
+              float min_output, float deadband)
+{
+    pid->Kp = Kp;
+    pid->Ki = Ki;
+    pid->Kd = Kd;
+    pid->setpoint = setpoint;
+    pid->integral = 0.0f;
+    pid->prev_error = 0.0f;
+    pid->prev_derivative = 0.0f;
+    pid->integral_limit = integral_limit;
+    pid->output_limit = output_limit;
+    pid->min_output = min_output;
+    pid->deadband = deadband;
+}
+
+// PID æ›´æ–°, è¾“å…¥å½“å‰æµ‹é‡å€¼, è¿”å›æ§åˆ¶è¾“å‡º
+float PID_Update(PID_Controller *pid, float measurement)
+{
+    float error = pid->setpoint - measurement;
+
+    // æ¯”ä¾‹é¡¹
+    float P = pid->Kp * error;
+
+    // ç§¯åˆ†é¡¹(å¸¦é™å¹…é˜²é¥±å’Œ)
+    pid->integral += error;
+    if (pid->integral > pid->integral_limit)
+        pid->integral = pid->integral_limit;
+    if (pid->integral < -pid->integral_limit)
+        pid->integral = -pid->integral_limit;
+    float I = pid->Ki * pid->integral;
+
+    // å¾®åˆ†é¡¹(å¯¹è¯¯å·®å¾®åˆ† + ä½é€šæ»¤æ³¢å¹³æ»‘)
+    float raw_derivative = error - pid->prev_error;
+    float D = PID_D_ALPHA * raw_derivative + (1.0f - PID_D_ALPHA) * pid->prev_derivative;
+    pid->prev_derivative = D;
+    D = pid->Kd * D;
+    pid->prev_error = error;
+
+    // åˆæˆè¾“å‡º
+    float output = P + I + D;
+
+    // æ­»åŒº: |error| å°äºæ­»åŒºé˜ˆå€¼æ—¶è¾“å‡º0 (é¿å…æŠ–åŠ¨)
+    if (fabsf(error) < pid->deadband)
+    {
+        output = 0.0f;
+    }
+
+    // è¾“å‡ºé™å¹…
+    if (output > pid->output_limit)
+        output = pid->output_limit;
+    if (output < -pid->output_limit)
+        output = -pid->output_limit;
+
+    // æœ€ä½è¾“å‡º: éé›¶æ—¶æŠ¬å‡è‡³ Â±min_output
+    if (output != 0.0f && pid->min_output > 0.0f)
+    {
+        if (fabsf(output) < pid->min_output)
+            output = (output > 0.0f) ? pid->min_output : -pid->min_output;
+    }
+
+    return output;
+}
+
+// PID é‡ç½®(ç›®æ ‡ä¸¢å¤±æ—¶æ¸…é›¶ç§¯åˆ†å’Œå¾®åˆ†å†å²)
+void PID_Reset(PID_Controller *pid)
+{
+    pid->integral = 0.0f;
+    pid->prev_error = 0.0f;
+    pid->prev_derivative = 0.0f;
+}
+// ==========================================================
+
+// 8é‚»åŸŸ
 const int8_t dx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 const int8_t dy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
 
@@ -66,6 +176,14 @@ typedef enum
 
 static BeaconState current_state = BEACON_STATE_LOST;
 
+// ä½é€šæ»¤æ³¢å†å²å€¼ (æ— äººæœº vx/vy)
+static float fly_filt_vx = 0.0f;
+static float fly_filt_vy = 0.0f;
+
+// PID æ§åˆ¶å™¨å®ä¾‹
+static PID_Controller pid_x;  // offset_x -> vy æ§åˆ¶
+static PID_Controller pid_y;  // offset_y -> vx æ§åˆ¶
+
 int16_t direct_dx = 0;
 
 typedef struct
@@ -74,7 +192,7 @@ typedef struct
     int16_t minx, maxx, miny, maxy;
     uint32_t area;
     float max_ratio;
-    uint32_t sum_pixel; // Á¬Í¨Óò×ÜÁÁ¶È£¨ĞÅ±êµÆºËĞÄÌØÕ÷£©
+    uint32_t sum_pixel; // è¿é€šåŸŸæ€»äº®åº¦ï¼ˆä¿¡æ ‡ç¯æ ¸å¿ƒç‰¹å¾ï¼‰
 } Blob;
 
 Blob blobs[8];
@@ -111,7 +229,7 @@ void SetCarSpeed(int16_t vx, int16_t vy, int16_t vw)
     uart_write_byte(UART_0, 0xBA);
 }
 
-// ===================== ÎŞÈË»ú¿ØÖÆ =====================
+// ===================== æ— äººæœºæ§åˆ¶ =====================
 #define FLY_CONTROL_UART UART_0
 
 static uint8_t FlyTxPacket[9];
@@ -258,7 +376,7 @@ float calculate_vertical_angle(int16_t top_x, int16_t top_y, int16_t bottom_x, i
 
 uint8_t no_car_led = 0;
 
-// ===================== ºËĞÄĞŞ¸Ä£ºĞÅ±êµÆÊ¶±ğº¯Êı£¨ÏÈÅĞ¶ÏÊÇ·ñ³öÏÖ£¬ÔÙÊ¶±ğ£© =====================
+// ===================== æ ¸å¿ƒä¿®æ”¹ï¼šä¿¡æ ‡ç¯è¯†åˆ«å‡½æ•°ï¼ˆå…ˆåˆ¤æ–­æ˜¯å¦å‡ºç°ï¼Œå†è¯†åˆ«ï¼‰ =====================
 void find_bright_center(void)
 {
     memset(xy_x2_boundary, 0, sizeof(xy_x2_boundary));
@@ -272,8 +390,8 @@ void find_bright_center(void)
     dir_led_angle = 0.0f;
     dir_top_x = dir_top_y = dir_bottom_x = dir_bottom_y = -1;
 
-    // ¡¾µÚÒ»²½£ºÔ¤ÅĞ¶ÏĞÅ±êµÆÊÇ·ñ³öÏÖ¡¿ºËĞÄĞŞ¸Ä£¡
-    // Í³¼ÆÍ¼ÏñÖĞ¸ßÁÁÏñËØ×ÜÊı£¬ÅĞ¶ÏÊÇ·ñ·ûºÏĞÅ±êµÆµÄÌØÕ÷
+    // ã€ç¬¬ä¸€æ­¥ï¼šé¢„åˆ¤æ–­ä¿¡æ ‡ç¯æ˜¯å¦å‡ºç°ã€‘æ ¸å¿ƒä¿®æ”¹ï¼
+    // ç»Ÿè®¡å›¾åƒä¸­é«˜äº®åƒç´ æ€»æ•°ï¼Œåˆ¤æ–­æ˜¯å¦ç¬¦åˆä¿¡æ ‡ç¯çš„ç‰¹å¾
     uint32_t bright_pixel_total = 0;
     for (int y = 0; y < MT9V03X_H; y++)
     {
@@ -284,7 +402,7 @@ void find_bright_center(void)
         }
     }
 
-    // ¸ßÁÁÏñËØ²»ÔÚĞÅ±êµÆ·¶Î§ÄÚ ¡ú ÅĞ¶¨Î´³öÏÖ£¬Ö±½ÓÖ´ĞĞÎŞÄ¿±êÂß¼­
+    // é«˜äº®åƒç´ ä¸åœ¨ä¿¡æ ‡ç¯èŒƒå›´å†… â†’ åˆ¤å®šæœªå‡ºç°ï¼Œç›´æ¥æ‰§è¡Œæ— ç›®æ ‡é€»è¾‘
     if (bright_pixel_total < BEACON_PIXEL_MIN || bright_pixel_total > BEACON_PIXEL_MAX)
     {
         is_beacon_detected = 0;
@@ -292,7 +410,7 @@ void find_bright_center(void)
         no_car_led = 1;
         beacon_count = 0;
 
-        // ±£ÁôÔ­ÓĞµÄÎŞÄ¿±ê±ß½ç»æÖÆ
+        // ä¿ç•™åŸæœ‰çš„æ— ç›®æ ‡è¾¹ç•Œç»˜åˆ¶
         for (int8_t dy = -1; dy <= 1; dy++)
         {
             for (int8_t dx = -1; dx <= 1; dx++)
@@ -309,7 +427,7 @@ void find_bright_center(void)
         return;
     }
 
-    // ¡¾µÚ¶ş²½£ºĞÅ±êµÆÒÑ³öÏÖ£¬Ö´ĞĞÔ­ÓĞÊ¶±ğÂß¼­¡¿ÍêÈ«±£ÁôÔ­¹¦ÄÜ
+    // ã€ç¬¬äºŒæ­¥ï¼šä¿¡æ ‡ç¯å·²å‡ºç°ï¼Œæ‰§è¡ŒåŸæœ‰è¯†åˆ«é€»è¾‘ã€‘å®Œå…¨ä¿ç•™åŸåŠŸèƒ½
     find_all_blobs();
     is_beacon_detected = 1;
     is_fly_beacon_detected = 0;
@@ -333,8 +451,8 @@ void find_bright_center(void)
         }
         return;
     }
-    //printf("ÊÇ·ñ¼ì²âµ½ĞÅ±êµÆ£º%d ",is_beacon_detected);
-    // ÒÔÏÂËùÓĞÂß¼­**ÍêÈ«±£ÁôÔ­°æ**£¬²»×öÈÎºÎĞŞ¸Ä
+    //printf("æ˜¯å¦æ£€æµ‹åˆ°ä¿¡æ ‡ç¯ï¼š%d ",is_beacon_detected);
+    // ä»¥ä¸‹æ‰€æœ‰é€»è¾‘**å®Œå…¨ä¿ç•™åŸç‰ˆ**ï¼Œä¸åšä»»ä½•ä¿®æ”¹
     int bar_idx = 0;
     float max_ratio = blobs[0].max_ratio;
     for (int i = 1; i < blob_cnt; i++)
@@ -346,14 +464,14 @@ void find_bright_center(void)
         }
     }
 
-    // ¼ÆËãĞÅ±êµÆÊıÁ¿£¨×ÜÁ¬Í¨ÓòÊı¼õÈ¥·½ÏòÖ¸Ê¾µÆ£©£¬·¶Î§ÏŞÖÆÔÚ0~2
+    // è®¡ç®—ä¿¡æ ‡ç¯æ•°é‡ï¼ˆæ€»è¿é€šåŸŸæ•°å‡å»æ–¹å‘æŒ‡ç¤ºç¯ï¼‰ï¼ŒèŒƒå›´é™åˆ¶åœ¨0~2
     int16_t raw_count = blob_cnt - 1;
     beacon_count = (raw_count < 0) ? 0 : ((raw_count > 2) ? 2 : (uint8_t)raw_count);
      
     Blob bar_blob = blobs[bar_idx];
     int16_t cx = bar_blob.cx;
     int16_t cy = bar_blob.cy;
-    // ¸üĞÂĞ¡³µ³¤Ìõ·½ÏòµÆÖĞĞÄ×ø±ê
+    // æ›´æ–°å°è½¦é•¿æ¡æ–¹å‘ç¯ä¸­å¿ƒåæ ‡
     bar_cx = cx;
     bar_cy = cy;
     int16_t minx = bar_blob.minx, maxx = bar_blob.maxx;
@@ -580,7 +698,7 @@ int TrackCar_FollowFly(void)
 {
     int16_t vx = 0, vy = 0, vw = 0;
 
-    // Çé¿ö3£ºÎ´¼ì²âµ½Ğ¡³µµÆ ¡ú ¾²Ö¹
+    // æƒ…å†µ3ï¼šæœªæ£€æµ‹åˆ°å°è½¦ç¯ â†’ é™æ­¢
     if (no_car_led == 1)
     {
         vx=0;
@@ -590,7 +708,7 @@ int TrackCar_FollowFly(void)
         return 0;
     }
 
-    // Çé¿ö1£ºÖ»¼ì²âµ½Ğ¡³µµÆ£¬Î´¼ì²âµ½ĞÅ±êµÆ ¡ú ½ö·¢ËÍĞı×ªÖ¸Áî
+    // æƒ…å†µ1ï¼šåªæ£€æµ‹åˆ°å°è½¦ç¯ï¼Œæœªæ£€æµ‹åˆ°ä¿¡æ ‡ç¯ â†’ ä»…å‘é€æ—‹è½¬æŒ‡ä»¤
     if (beacon_count == 0)
     {
         if (abs(direct_dx) > 6)
@@ -608,7 +726,7 @@ int TrackCar_FollowFly(void)
         return 1;
     }
 
-    // Çé¿ö2£ºÍ¬Ê±¼ì²âµ½Ğ¡³µµÆºÍĞÅ±êµÆ ¡ú ·¢ËÍĞı×ªºÍÆ½ÒÆÖ¸Áî
+    // æƒ…å†µ2ï¼šåŒæ—¶æ£€æµ‹åˆ°å°è½¦ç¯å’Œä¿¡æ ‡ç¯ â†’ å‘é€æ—‹è½¬å’Œå¹³ç§»æŒ‡ä»¤
     if (abs(direct_dx) > 6)
     {
         vx = 0;
@@ -638,64 +756,42 @@ int TrackCar_FollowFly(void)
 
 void TrackFly_Beacon(void)
 {
-  //printf("123");
     float vx = 0.0f, vy = 0.0f, vw = 0.0f;
-            int16_t offset_x = bar_cx - CenterX;  // Ë®Æ½Æ«ÒÆ(Õı=Æ«ÓÒ)
-        int16_t offset_y = bar_cy - CenterY;  // ´¹Ö±Æ«ÒÆ(Õı=Æ«ÏÂ)
-        int16_t enhance = 40.0f;
-        float vy_enhance = (offset_x*offset_x)/((offset_x*offset_x)*(offset_y*offset_y));
-        float vx_enhance = (offset_y*offset_y)/((offset_x*offset_x)*(offset_y*offset_y));
-    // µ±¼ì²âµ½Ğ¡³µµÆÊ±£¬ÎŞÈË»ú×·×Å³¤Ìõ·½ÏòµÆÅÜ£¬Ê¹Æä±£³ÖÔÚ»­ÃæÖĞĞÄ
+    int16_t offset_x = bar_cx - CenterX;  // æ°´å¹³åç§»(æ­£=åå³)
+    int16_t offset_y = bar_cy - CenterY;  // å‚ç›´åç§»(æ­£=åä¸‹)
+
+    // å½“æ£€æµ‹åˆ°å°è½¦ç¯æ—¶ï¼Œä½¿ç”¨ PID æ§åˆ¶è¿½ç€é•¿æ¡æ–¹å‘ç¯è·‘
     if (is_beacon_detected && no_car_led == 0)
     {
-        // ¼ÆËã³¤Ìõ·½ÏòµÆÏà¶ÔÓÚÍ¼ÏñÖĞĞÄµÄÆ«ÒÆÁ¿
-        // Í¼Ïñ×ø±êÏµ£ºxÏòÓÒÎªÕı£¬yÏòÏÂÎªÕı
+        // offset_x (æ°´å¹³åç§») é€šè¿‡ PID äº§ç”Ÿ vy (å·¦å³å¹³ç§»é€Ÿåº¦)
+        // ç›®æ ‡: offset_x = 0, å³æ–¹å‘ç¯åœ¨ç”»é¢æ°´å¹³ä¸­å¿ƒ
+        // æ³¨æ„: å–å offset_x, å› ä¸º PID setpoint=0, error=0-offset,
+        //       åå³(offset>0)æ—¶éœ€æ­£vyå³ç§»ï¼Œæ•…éœ€ä¼ å…¥ -offset
+        vy = PID_Update(&pid_x, -(float)offset_x);
 
+        // offset_y (å‚ç›´åç§») é€šè¿‡ PID äº§ç”Ÿ vx (å‰åå¹³ç§»é€Ÿåº¦)
+        // ç›®æ ‡: offset_y = 0, å³æ–¹å‘ç¯åœ¨ç”»é¢å‚ç›´ä¸­å¿ƒ
+        vx = PID_Update(&pid_y, (float)offset_y);
 
-    // ×óÓÒÆ½ÒÆ (vy)£º·½ÏòµÆÆ«ÓÒÔòÓÒÒÆ£¬Æ«×óÔò×óÒÆ£¨Ê¹ÓÃ±ÈÀı+³£ÊıËã·¨£¬Í¬Ğ¡³µ²¿·Ö£©
-        if (abs(offset_x) > PX_DEAD1)
-        {
-            vy = 1.5f * fabs(offset_x) + enhance*vy_enhance;
-            vy = (offset_x > 0) ? vy : -vy;
-        }
-        else
-        {
-            vy = 0.0f;
-        }
-        
-        // Ç°ºóÆ½ÒÆ (vx)£º·½ÏòµÆÆ«ÏÂ(ÀëµÃ½ü)ÔòºóÍË£¬Æ«ÉÏ(ÀëµÃÔ¶)ÔòÇ°½ø£¨Ê¹ÓÃ±ÈÀı+³£ÊıËã·¨£¬Í¬Ğ¡³µ²¿·Ö£©
-        if (abs(offset_y) > PY_DEAD)
-        {
-            vx = 1.5f * fabs(offset_y) + enhance*vx_enhance;
-            vx = (offset_y > 0) ? -vx : vx;
-        }
-        else
-        {
-            vx = 0.0f;
-        }
-
-        // ÎŞÈË»ú²»Ğı×ª
+        // æ— äººæœºä¸æ—‹è½¬
         vw = 0.0f;
     }
-    // ÆäËûÇé¿öÏÂÎŞÈË»ú¾²Ö¹
+    // å…¶ä»–æƒ…å†µä¸‹æ— äººæœºé™æ­¢, é‡ç½®PIDé˜²æ­¢ç§¯åˆ†é¥±å’Œ
     else
     {
         vx = 0.0f;
         vy = 0.0f;
         vw = 0.0f;
+        PID_Reset(&pid_x);
+        PID_Reset(&pid_y);
     }
 
-    // ÏŞ·ù£¬È·±£VX¡¢VY¡¢VW²»³¬³ö¡À60
-    if (vx > 200.0f) vx = 200.0f;
-    if (vx < -200.0f) vx = -200.0f;
-    if (vy > 200.0f) vy = 200.0f;
-    if (vy < -200.0f) vy = -200.0f;
-    if (vw > 200.0f) vw = 200.0f;
-    if (vw < -200.0f) vw = -200.0f;
+    // ä½é€šæ»¤æ³¢ (EMA): filtered = alpha * raw + (1 - alpha) * prev
+    fly_filt_vx = FLY_EMA_ALPHA * vx + (1.0f - FLY_EMA_ALPHA) * fly_filt_vx;
+    fly_filt_vy = FLY_EMA_ALPHA * vy + (1.0f - FLY_EMA_ALPHA) * fly_filt_vy;
 
-    SetFlySpeed(vx, vy, vw);
-    //printf("ÎŞÈË»ú¿ØÖÆÖ¸Áî - vx: %.1f, vy: %.1f, vw: %.1f\n", vx, vy, vw);
-    printf("%f,%f,%f,%f\n", vx, vy, (float)offset_x, (float)offset_y);
+    SetFlySpeed(fly_filt_vx, fly_filt_vy, vw);
+    printf("%f,%f,%f,%f,%f\n", 0.0f, fly_filt_vx, fly_filt_vy, (float)offset_x, (float)offset_y);
 }
 
 int main(void)
@@ -721,6 +817,13 @@ int main(void)
         XY_BOUNDARY, BOUNDARY_NUM,
         xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
         xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
+
+    // åˆå§‹åŒ– PID æ§åˆ¶å™¨ (setpoint=0, min_output=100, deadband=2)
+    PID_Init(&pid_x, PID_X_KP, PID_X_KI, PID_X_KD,
+             0.0f, PID_INTEGRAL_LIMIT, PID_OUTPUT_LIMIT, 100.0f, 2.0f);
+    PID_Init(&pid_y, PID_Y_KP, PID_Y_KI, PID_Y_KD,
+             0.0f, PID_INTEGRAL_LIMIT, PID_OUTPUT_LIMIT, 100.0f, 2.0f);
+
      // printf("123");
     while (1)
     {   
@@ -737,11 +840,11 @@ int main(void)
                     image_copy[y][x] = (pix < GRAY_THRESH) ? 0 : pix;
                 }
             }
-            find_bright_center();                    // ÏÈ½âËãµ±Ç°Ö¡µÄ·½ÏòÖ¸Ê¾µÆÌØÕ÷µã¡¢Î»ÖÃ¡¢·½Ïò
-           //seekfree_assistant_camera_send();        // ÔÙ·¢ËÍÍ¼Ïñ+µ±Ç°Ö¡µÄ±ß½çÊı¾İµ½ÉÏÎ»»ú
-            TrackFly_Beacon();                        // ÎŞÈË»ú×·Ğ¡³µµÆÆ½ÒÆ
+            find_bright_center();                    // å…ˆè§£ç®—å½“å‰å¸§çš„æ–¹å‘æŒ‡ç¤ºç¯ç‰¹å¾ç‚¹ã€ä½ç½®ã€æ–¹å‘
+           //seekfree_assistant_camera_send();        // å†å‘é€å›¾åƒ+å½“å‰å¸§çš„è¾¹ç•Œæ•°æ®åˆ°ä¸Šä½æœº
+            TrackFly_Beacon();                        // æ— äººæœºè¿½å°è½¦ç¯å¹³ç§»
             // TrackCar_FollowFly();
-           //printf("ĞÅ±êµÆÊıÁ¿£º %d\n",beacon_count);
+           //printf("ä¿¡æ ‡ç¯æ•°é‡ï¼š %d\n",beacon_count);
         }
         system_delay_ms(1);
     }
