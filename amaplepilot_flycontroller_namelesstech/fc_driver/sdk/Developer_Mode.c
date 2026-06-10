@@ -314,9 +314,10 @@ void Auto_Flight_Ctrl(int16_t *mode)
     flight_altitude_control(ALTHOLD_AUTO_POS_CTRL, 100, NUL); // 高度控制
     break;
   }
+  /*x是前后正为前，负为后。y是左右正左负右。*/
   case 19:
   {
-    printf("SpeedT[0]: %.4f, SpeedT[1]: %.4f, SpeedT[2]: %.4f\n", SpeedT[0], SpeedT[1], SpeedT[2]);
+    //printf("SpeedT[0]: %.4f, SpeedT[1]: %.4f, SpeedT[2]: %.4f\n", SpeedT[0], SpeedT[1], SpeedT[2]);
     // printf("SpeedPacket[1]: %.4f\n", SpeedPacket[1]/100.0f);
     // printf("SpeedPacket[2]: %.4f\n", SpeedPacket[2]/100.0f);
 
@@ -332,7 +333,7 @@ void Auto_Flight_Ctrl(int16_t *mode)
       {
         altitude_time++;
       }
-      if (altitude_time >= OneSecond * 4) // 当高度达到50cm并维持1s后，进入下一个状态
+      if (altitude_time >= OneSecond * 4) // 当高度达到85cm并维持1s后，进入下一个状态
       {
         MyState = 1;
         StateTime = 0; // 切换状态时，重置状态保持时间
@@ -347,13 +348,20 @@ void Auto_Flight_Ctrl(int16_t *mode)
       SpeedT[1] = SpeedPacket[1] / 100.0f;
       SpeedT[2] = SpeedPacket[2] / 100.0f;
       SetFlyCar(SpeedT[0], SpeedT[1], SpeedT[2]); // CYT4控制
-      if ((fabs(SpeedT[0] - 0.00) <= 0.05) && (fabs(SpeedT[1] - 0.00) <= 0.05))
+      printf("%f,%f,%f,%f\n", 0.0f, SpeedT[0], SpeedT[1], SpeedT[2]);
+     //printf("SpeedPacket[0]: %d, SpeedPacket[1]: %d, SpeedPacket[2]: %d\n", SpeedPacket[0], SpeedPacket[1], SpeedPacket[2]);
+      if ((fabs(SpeedT[0] - 0.00) <= 0.2) && (fabs(SpeedT[1] - 0.00) <= 0.2))
       {
+        SpeedT[0] = 0.0f;
+        SpeedT[1] = 0.0f;
+        SpeedT[2] = 0.0f;
         indoor_position_control(0); // 原地定点
       }
 
-      if (StateTime >= OneSecond * 20) // 维持20s后，进入下一个状态
+      if (StateTime >= OneSecond * 500) // 维持5s后，进入下一个状态
       {
+        
+        
         MyState = 2;
         StateTime = 0; // 切换状态时，重置状态保持时间
       }
@@ -365,7 +373,7 @@ void Auto_Flight_Ctrl(int16_t *mode)
     }
     maplepilot.yaw_ctrl_mode = ROTATE;
     // maplepilot.yaw_outer_control_output = rc_data.rc_rpyt[RC_YAW];//顺指针为正
-    flight_altitude_control(ALTHOLD_AUTO_POS_CTRL, 100, NUL); // 高度控制
+    flight_altitude_control(ALTHOLD_AUTO_POS_CTRL, 110, NUL); // 高度控制
     break;
   }
   case 20:
