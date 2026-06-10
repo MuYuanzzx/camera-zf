@@ -3,8 +3,6 @@
 #include <string.h>
 #include <math.h>
 
-#define MT9V03X_W 188
-#define MT9V03X_H 120
 #define IMAGE_SIZE (MT9V03X_W * MT9V03X_H)
 
 #define BOUNDARY_NUM (MT9V03X_H * 2)
@@ -57,21 +55,20 @@ uint8_t image_copy[MT9V03X_H][MT9V03X_W];
 #define FLY_EMA_ALPHA 0.20f
 
 // ===================== PID 控制器参数 =====================
-// 系统: offset范围 ±94x/±60y像素, 输出 ±150, 周期 ~50-100Hz
-// 原始控制律参考: v = 1.5*|offset| + 60, deadzone=10px
+// 系统: offset ≈ ±60像素, 输出 ±400, 周期 ~50Hz (20ms), 输出最低200
 //
 // 水平方向 offset_x -> vy 控制 (左右平移)
-#define PID_X_KP  2.5f     // P: offset=40→100, offset=60→150满幅
-#define PID_X_KI  0.05f    // I: 20帧×10px→Iaccum=200→I=10, 消除稳态误差
-#define PID_X_KD  0.8f     // D: Δ5px/f→D=4, 预测阻尼抑制速度抖动
+#define PID_X_KP  5.0f     // P: offset=60→P=300, 留100给I+D凑满400
+#define PID_X_KI  0.05f    // I: 20帧×10px→Iaccum=200→I=10, 消除稳态
+#define PID_X_KD  1.0f     // D: Δ5px→D=5阻尼抑制速度抖动
 
 // 垂直方向 offset_y -> vx 控制 (前后平移)
-#define PID_Y_KP  2.5f     // P: 同水平
+#define PID_Y_KP  5.0f     // P: 同水平
 #define PID_Y_KI  0.05f    // I: 同水平
-#define PID_Y_KD  0.8f     // D: 同水平
+#define PID_Y_KD  1.0f     // D: 同水平
 
-#define PID_INTEGRAL_LIMIT  100.0f  // I限幅(防windup), max_I = 0.05*100 = 5
-#define PID_OUTPUT_LIMIT    150.0f  // 输出限幅 ±150
+#define PID_INTEGRAL_LIMIT  150.0f  // I限幅(防windup), max_I = 0.05*150 = 7.5
+#define PID_OUTPUT_LIMIT    400.0f  // 输出限幅 ±400
 #define PID_D_ALPHA         0.2f    // D低通滤波α(0~1, 0.2强平滑抑制高频抖)
 // ==========================================================
 
@@ -173,8 +170,6 @@ typedef enum
     BEACON_STATE_ALIGNING,
     BEACON_STATE_TRACKING,
 } BeaconState;
-
-static BeaconState current_state = BEACON_STATE_LOST;
 
 // 低通滤波历史值 (无人机 vx/vy)
 static float fly_filt_vx = 0.0f;
@@ -760,6 +755,11 @@ void TrackFly_Beacon(void)
     int16_t offset_x = bar_cx - CenterX;  // 水平偏移(正=偏右)
     int16_t offset_y = bar_cy - CenterY;  // 垂直偏移(正=偏下)
 
+    // 速度正负跳变检测: vx或vy任一方向符号翻转后, 冻结0.5秒(25帧)输出0
+    static float  prev_vx_raw = 0.0f;
+    static float  prev_vy_raw = 0.0f;
+    static uint16_t freeze_cnt  = 0;       // 剩余冻结帧数
+
     // 当检测到小车灯时，使用 PID 控制追着长条方向灯跑
     if (is_beacon_detected && no_car_led == 0)
     {
@@ -773,6 +773,34 @@ void TrackFly_Beacon(void)
         // 目标: offset_y = 0, 即方向灯在画面垂直中心
         vx = PID_Update(&pid_y, (float)offset_y);
 
+        // 检测符号跳变 (非零→符号翻转)
+        if (freeze_cnt == 0)
+        {
+            int sign_vx_p = (prev_vx_raw > 0.0f) ? 1 : ((prev_vx_raw < 0.0f) ? -1 : 0);
+            int sign_vx_c = (vx > 0.0f) ? 1 : ((vx < 0.0f) ? -1 : 0);
+            int sign_vy_p = (prev_vy_raw > 0.0f) ? 1 : ((prev_vy_raw < 0.0f) ? -1 : 0);
+            int sign_vy_c = (vy > 0.0f) ? 1 : ((vy < 0.0f) ? -1 : 0);
+
+            if ((sign_vx_p != 0 && sign_vx_p != sign_vx_c && sign_vx_c != 0) ||
+                (sign_vy_p != 0 && sign_vy_p != sign_vy_c && sign_vy_c != 0))
+            {
+                freeze_cnt = 25;  // 50fps × 0.5s = 25帧
+            }
+        }
+
+        // 冻结期间输出零, 重置PID防止积分饱和
+        if (freeze_cnt > 0)
+        {
+            freeze_cnt--;
+            vx = 0.0f;
+            vy = 0.0f;
+            PID_Reset(&pid_x);
+            PID_Reset(&pid_y);
+        }
+
+        prev_vx_raw = vx;
+        prev_vy_raw = vy;
+
         // 无人机不旋转
         vw = 0.0f;
     }
@@ -782,6 +810,9 @@ void TrackFly_Beacon(void)
         vx = 0.0f;
         vy = 0.0f;
         vw = 0.0f;
+        prev_vx_raw = 0.0f;
+        prev_vy_raw = 0.0f;
+        freeze_cnt = 0;
         PID_Reset(&pid_x);
         PID_Reset(&pid_y);
     }
@@ -818,11 +849,11 @@ int main(void)
         xy_x1_boundary, xy_x2_boundary, xy_x3_boundary,
         xy_y1_boundary, xy_y2_boundary, xy_y3_boundary);
 
-    // 初始化 PID 控制器 (setpoint=0, min_output=100, deadband=2)
+    // 初始化 PID 控制器 (setpoint=0, min_output=200, deadband=3)
     PID_Init(&pid_x, PID_X_KP, PID_X_KI, PID_X_KD,
-             0.0f, PID_INTEGRAL_LIMIT, PID_OUTPUT_LIMIT, 100.0f, 2.0f);
+             0.0f, PID_INTEGRAL_LIMIT, PID_OUTPUT_LIMIT, 200.0f, 3.0f);
     PID_Init(&pid_y, PID_Y_KP, PID_Y_KI, PID_Y_KD,
-             0.0f, PID_INTEGRAL_LIMIT, PID_OUTPUT_LIMIT, 100.0f, 2.0f);
+             0.0f, PID_INTEGRAL_LIMIT, PID_OUTPUT_LIMIT, 200.0f, 3.0f);
 
      // printf("123");
     while (1)
