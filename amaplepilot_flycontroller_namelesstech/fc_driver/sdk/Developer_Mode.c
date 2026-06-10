@@ -355,6 +355,8 @@ void Auto_Flight_Ctrl(int16_t *mode)
         SpeedT[0] = 0.0f;
         SpeedT[1] = 0.0f;
         SpeedT[2] = 0.0f;
+        rc_data.rc_rpyt[ROLL]==0;
+        rc_data.rc_rpyt[PITCH]==0;
         indoor_position_control(0); // 原地定点
       }
 
